@@ -1,7 +1,7 @@
-ArduinoHOBD
+ArduinoHondaOBD1
 ===========
 
-Implements Honda OBD protocol using arduino
+Implements Honda OBD1 protocol using Arduino
 
 
 Supports
@@ -11,8 +11,8 @@ Supports
 
 Files
 -----
-* hobd_elm - implements hobd to elm obd2 protocol
-* hobd_lcd - implements hobd to lcd display
+* hobd_elm - implements Honda OBD1 to ELM OBD2 protocol
+* hobd_lcd - implements Honda OBD1 to LCD display
 
 
 Diagram for hobd_elm
