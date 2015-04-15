@@ -65,3 +65,8 @@ Wiring for hobd_uni
     D7 ---------------------- Pin4
 
 
+TODO
+-----
+* ECU detection (Obd1 or Obd2)
+* Fault codes reader
+* Images :)
