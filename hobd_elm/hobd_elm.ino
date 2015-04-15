@@ -2,7 +2,7 @@
  Author:
  - Philip Bordado (kerpz@yahoo.com)
  Hardware:
- - HC-05 Bluetooth module at pin 8 (Rx) pin 9 (Tx) 
+ - HC-05 Bluetooth module at pin 10 (Rx) pin 11 (Tx) 
  - DLC(K-line) at pin 12
  Software:
  - Arduino 1.0.5
@@ -18,7 +18,7 @@
 */
 #include <SoftwareSerialWithHalfDuplex.h>
 
-SoftwareSerialWithHalfDuplex btSerial(8, 9); // RX, TX
+SoftwareSerialWithHalfDuplex btSerial(10, 11); // RX, TX
 SoftwareSerialWithHalfDuplex dlcSerial(12, 12, false, false);
 
 bool elm_memory = false;
