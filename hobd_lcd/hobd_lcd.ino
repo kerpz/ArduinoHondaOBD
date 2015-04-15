@@ -40,17 +40,18 @@ void dlcInit() {
 
 int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
   byte crc = (0xFF - (cmd + num + loc + len - 0x01)); // checksum FF - (cmd + num + loc + len - 0x01)
+
+  unsigned long timeOut = millis() + 250; // timeout @ 250 ms
+  memset(data, 0, sizeof(data));
+
+  dlcSerial.listen();
+
   dlcSerial.write(cmd);  // header/cmd read memory ??
   dlcSerial.write(num);  // num of bytes to send
   dlcSerial.write(loc);  // address
   dlcSerial.write(len);  // num of bytes to read
   dlcSerial.write(crc);  // checksum
   
-  //byte data[len+3];
-  unsigned long timeOut = millis() + 250; // timeout @ 250 ms
-  memset(data, 0, sizeof(data));
-  
-  dlcSerial.listen();
   int i = 0;
   while (i < (len+3) && millis() < timeOut) {
     if (dlcSerial.available()) {
