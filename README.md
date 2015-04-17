@@ -1,7 +1,7 @@
-ArduinoHondaOBD1
+ArduinoHondaOBD
 ===========
 
-Implements Honda OBD1 protocol using Arduino
+Implements Honda OBD protocol using Arduino
 
 
 Supports
@@ -11,13 +11,33 @@ Supports
 
 Files
 -----
-* hobd_elm - implements Honda OBD1 to ELM OBD2 protocol (bluetooth)
-* hobd_lcd - implements Honda OBD1 to LCD display
-* hobd_uni - implements Honda OBD1 with ELM OBD2 protocol (bluetooth) and LCD display
+* hobd_uni - implements Honda OBD with ELM OBD2 protocol (bluetooth) and LCD display
+* hobd_elm - implements Honda OBD to ELM OBD2 protocol (bluetooth)
+* hobd_lcd - implements Honda OBD to LCD display
 * LCD_wiring.png - LCD wiring for arduino uno (10k potentiometer)
 
 
-Wiring for hobd_elm
+Wiring for hobd_uni (Joined ELM and LCD codes)
+--------------------
+    Honda 3 Pin DLC           Arduino Uno
+    Gnd --------------------- Gnd
+    +12 --------------------- Vin
+    K-line ------------------ Pin12
+
+    HC-05 Bluetooth           Arduino Uno               
+    Rx ---------------------- Pin11
+    Tx ---------------------- Pin10
+
+    LCD 2x16                  Arduino Uno               
+    RS ---------------------- Pin9
+    Enable ------------------ Pin8
+    D4 ---------------------- Pin7
+    D5 ---------------------- Pin6
+    D6 ---------------------- Pin5
+    D7 ---------------------- Pin4
+
+
+Wiring for hobd_elm (Deprecated use hobd_uni)
 --------------------
     Honda 3 Pin DLC           Arduino Uno
     Gnd --------------------- Gnd
@@ -29,7 +49,7 @@ Wiring for hobd_elm
     Tx ---------------------- Pin10
 
 
-Wiring for hobd_lcd:
+Wiring for hobd_lcd (Deprecated use hobd_uni)
 ---------------
     Honda 3 Pin DLC           Arduino Uno
     Gnd --------------------- Gnd
@@ -45,24 +65,6 @@ Wiring for hobd_lcd:
     D7 ---------------------- Pin4
 
 
-Wiring for hobd_uni
---------------------
-    Honda 3 Pin DLC           Arduino Uno
-    Gnd --------------------- Gnd
-    +12 --------------------- Vin
-    K-line ------------------ Pin12
-
-    HC-05 Bluetooth           Arduino Uno               
-    Rx ---------------------- Pin11
-    Tx ---------------------- Pin10
-
-    LCD 2x16                  Arduino Uno               
-    RS ---------------------- Pin9
-    Enable ------------------ Pin8
-    D4 ---------------------- Pin7
-    D5 ---------------------- Pin6
-    D6 ---------------------- Pin5
-    D7 ---------------------- Pin4
 
 
 TODO
