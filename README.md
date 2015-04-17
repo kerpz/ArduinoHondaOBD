@@ -1,7 +1,9 @@
 ArduinoHondaOBD
 ===========
 
-Implements Honda OBD protocol using Arduino
+An arduino code that reads Honda OBD Protocol and translates to ELM327 protocol.
+I use Torque app (android) to read and display data via bluetooth, and
+LCD to display basic data such as RPM, VSS, ECT, IAT, TPS, MAP, and VOLTS.
 
 
 Supports
