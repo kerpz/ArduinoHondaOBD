@@ -30,7 +30,7 @@ Wiring for hobd_uni (Joined ELM and LCD codes)
     Rx ---------------------- Pin11
     Tx ---------------------- Pin10
 
-    LCD 2x16                  Arduino Uno               
+    LCD 16x2                  Arduino Uno               
     RS ---------------------- Pin9
     Enable ------------------ Pin8
     D4 ---------------------- Pin7
@@ -38,6 +38,7 @@ Wiring for hobd_uni (Joined ELM and LCD codes)
     D6 ---------------------- Pin5
     D7 ---------------------- Pin4
 
+![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/UNI_wiring.png "UNI Wiring Image")
 
 Wiring for hobd_elm (Deprecated use hobd_uni)
 --------------------
@@ -67,10 +68,21 @@ Wiring for hobd_lcd (Deprecated use hobd_uni)
     D7 ---------------------- Pin4
 
 
+Screenshots (LCD 16x2)
+---------------
 
+![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/LCD_01.png "LCD Screenshot 01")
+![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/LCD_02.png "LCD Screenshot 02")
+![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/LCD_03.png "LCD Screenshot 03")
+
+Screenshots (Andorid App TORQUE)
+---------------
+
+![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/TORQUE_01.png "TORQUE Screenshot 01")
+![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/TORQUE_02.png "TORQUE Screenshot 02")
+![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/TORQUE_03.png "TORQUE Screenshot 03")
 
 TODO
 -----
 * ECU detection (Obd1 or Obd2)
 * Fault codes reader
-* Images :)
