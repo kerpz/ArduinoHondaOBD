@@ -4,6 +4,7 @@
  Hardware:
  - HC-05 Bluetooth module at pin 10 (Rx) pin 11 (Tx) 
  - DLC(K-line) at pin 12
+ - Voltage divider @ 12v Car to pin A0 (680k ohms and 220k ohms)
  Software:
  - Arduino 1.0.5
  - SoftwareSerialWithHalfDuplex
@@ -365,6 +366,22 @@ void procbtSerial(void) {
       sprintf_P(btdata2, PSTR("NO DATA\r\n>"));
     }
   }
+  else if (!strcmp(btdata1, "2009")) { // custom hobd mapping / flags
+    if (dlcCommand(0x20, 0x05, 0x09, 0x01, dlcdata)) {
+      sprintf_P(btdata2, PSTR("60 09 %02X\r\n>"), dlcdata[2]);
+    }
+    else {
+      sprintf_P(btdata2, PSTR("NO DATA\r\n>"));
+    }
+  }
+  else if (!strcmp(btdata1, "200A")) { // custom hobd mapping / flags
+    if (dlcCommand(0x20, 0x05, 0x0A, 0x01, dlcdata)) {
+      sprintf_P(btdata2, PSTR("60 0A %02X\r\n>"), dlcdata[2]);
+    }
+    else {
+      sprintf_P(btdata2, PSTR("NO DATA\r\n>"));
+    }
+  }
   else if (!strcmp(btdata1, "200B")) { // custom hobd mapping / flags
     //sprintf_P(btdata2, PSTR("60 0C AA\r\n>")); // 10101010 / test data
     if (dlcCommand(0x20, 0x05, 0x0B, 0x01, dlcdata)) {
@@ -404,10 +421,11 @@ void procdlcSerial(void) {
   //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
   //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
   byte data[20];
-  unsigned int rpm=0,vss=0,ect=0,iat=0,maps=0,tps=0,volt=0, imap=0;
+  unsigned int rpm=0,vss=0,ect=0,iat=0,maps=0,baro=0,tps=0,volt=0, imap=0;
 
   if (dlcCommand(0x20,0x05,0x00,0x10,data)) { // row 1
-    rpm = (data[2] * 256 + data[3]) / 4;
+    //rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
+    rpm = (data[2] * 256 + data[3]) / 4; // OBD2
     vss = data[4];
   }
   
@@ -419,11 +437,14 @@ void procdlcSerial(void) {
     f = data[3];
     f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
     iat = round(f);
-    maps = data[4];
-    tps = (data[6] - 24) / 2;
+    maps = data[4]; // data[4] * 0.716-5
+    baro = data[5]; // data[5] * 0.716-5
+    tps = data[6]; // (data[6] - 24) / 2;
     f = data[9];
     f = (f / 10.45) * 10.0; // cV
     volt = round(f);
+    //alt_fr = data[10] / 2.55
+    //eld = 77.06 - data[11] / 2.5371
   }
   
   // IMAP = RPM * MAP / IAT / 2
@@ -538,7 +559,6 @@ void procdlcSerial(void) {
   lcd.print(i/10);
   i %= 10;
   lcd.print(i);
-  
 }  
 
 void setup()
@@ -551,12 +571,13 @@ void setup()
   dlcInit();
 
   lcd.begin(0, 2); // sets the LCD's rows and colums:
+
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Honda OBD v1.0");
   lcd.setCursor(0,1);
-  lcd.print("Philip & Akie");
-  
+  lcd.print("LCD 16x2 Mode");
+
   pinMode(13, OUTPUT);
 }
 
@@ -567,6 +588,8 @@ void loop() {
     elm_mode = true;
     lcd.clear();
     lcd.setCursor(0, 0);
+    lcd.print("Honda OBD v1.0");
+    lcd.setCursor(0,1);
     lcd.print("Bluetooth Mode");
     procbtSerial();
   }
