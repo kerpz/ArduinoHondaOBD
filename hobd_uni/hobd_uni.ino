@@ -22,6 +22,16 @@
 
 // input signals: ign, door
 // output signals: alarm horn, lock door, unlock door, immobilizer
+/*
+  Extra pins
+  - 14 = Voltage divider (Input Signal)
+  - 15 = Ignition (Input Signal)
+  - 16 = Door Status (Input Signal)
+  - 17 = Door Lock 
+  - 18 = Door Unlock
+  - 19 = Alarm Horn
+*/
+
 
 /*
 * LCD RS pin 9
@@ -46,8 +56,10 @@ bool elm_echo = false;
 bool elm_space = false;
 bool elm_linefeed = false;
 bool elm_header = false;
-bool pin_13 = false;
 int  elm_protocol = 0; // auto
+
+byte hobd_protocol = 2; // 0 = obd0, 1 = obd1, 2 = obd2
+bool pin_13 = false;
 
 void bt_write(char *str) {
   while (*str != '\0')
@@ -97,6 +109,39 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
     return 0; // error
   }
   return 1; // success
+}
+
+unsigned int readVoltage(void) {
+  // Read 1.1V reference against AVcc
+  // set the reference to Vcc and the measurement to the internal 1.1V reference
+  #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+    ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  #elif defined (__AVR_ATtiny24__) || defined(__AVR_ATtiny44__) || defined(__AVR_ATtiny84__)
+    ADMUX = _BV(MUX5) | _BV(MUX0);
+  #elif defined (__AVR_ATtiny25__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
+    ADMUX = _BV(MUX3) | _BV(MUX2);
+  #else
+    ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  #endif  
+ 
+  delay(2); // Wait for Vref to settle
+  ADCSRA |= _BV(ADSC); // Start conversion
+  while (bit_is_set(ADCSRA,ADSC)); // measuring
+ 
+  uint8_t low  = ADCL; // must read ADCL first - it then locks ADCH  
+  uint8_t high = ADCH; // unlocks both
+ 
+  long vcc = (high<<8) | low;
+ 
+  //result = 1125300L / result; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
+  vcc = 1125.3 / vcc; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
+  
+  // kerpz haxx
+  float R1 = 680000.0; // Resistance of R1 (680kohms)
+  float R2 = 220000.0; // Resistance of R2 (220kohms)
+  //unsigned int volt2 = (((analogRead(14) * vcc) / 1024.0) / (R2/(R1+R2))) * 10.0; // convertion & voltage divider
+  //temp = ((analogRead(pinTemp) * vcc) / 1024.0) * 100.0; // LM35 celcius
+  return (((analogRead(14) * vcc) / 1024.0) / (R2/(R1+R2))) * 10.0; // convertion & voltage divider
 }
 
 void procbtSerial(void) {
@@ -155,7 +200,21 @@ void procbtSerial(void) {
     //elm_protocol = atoi(data[4]);
     sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
-  else if (strstr(btdata1, "AT13")) { // pin 13 test
+  else if (!strcmp(btdata1, "ATRV")) { // read voltage in float / volts
+    //btSerial.print("12.0V\r\n>");
+    byte v1 = 0, v2 = 0, v3 = 0;
+    unsigned int volt2 = readVoltage();
+    v1 = volt2 / 10;
+    volt2 %= 10;
+    v2 = volt2;
+    sprintf_P(btdata2, PSTR("%d.%dV\r\n>"), v1, v2);
+  }
+  // kerpz custom cmd/pid
+  else if (strstr(btdata1, "ATHOBD")) { // set hobd protocol
+    hobd_protocol = (byte)btdata1[6];
+    sprintf_P(btdata2, PSTR("OK\r\n>"));
+  }
+  else if (strstr(btdata1, "AT13")) { // pin 13 test  // T = toggle, 1 = on, 0 = off
     if (btdata1[4] == 'T') {
       pin_13 = !pin_13;
     }
@@ -171,9 +230,17 @@ void procbtSerial(void) {
     }
     sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
-  else if (!strcmp(btdata1, "ATRV")) { // read voltage in float / volts
-    btSerial.print("12.0V\r\n>");
-    //sprintf_P(btdata2, PSTR("%dV\r\n>"), volt2);
+  else if (strstr(btdata1, "AT17")) { // door lock signal @ pin 17
+    digitalWrite(17, HIGH);
+    delay(1000);
+    digitalWrite(17, LOW);
+    sprintf_P(btdata2, PSTR("OK\r\n>"));
+  }
+  else if (strstr(btdata1, "AT18")) { // door unlock signal @ pin 18
+    digitalWrite(18, HIGH);
+    delay(1000);
+    digitalWrite(18, LOW);
+    sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
   // sprintf_P(cmd_str, PSTR("%02X%02X\r"), mode, pid);
   // sscanf(data, "%02X%02X", mode, pid)
@@ -256,7 +323,8 @@ void procbtSerial(void) {
   //}
   else if (!strcmp(btdata1, "010B")) { // map (kPa)
     if (dlcCommand(0x20, 0x05, 0x12, 0x01, dlcdata)) {
-      sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), dlcdata[2]);
+      int i = dlcdata[2] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
+      sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), i);
     }
     else {
       sprintf_P(btdata2, PSTR("DATA ERROR\r\n>"));
@@ -264,7 +332,15 @@ void procbtSerial(void) {
   }
   else if (!strcmp(btdata1, "010C")) { // rpm
     if (dlcCommand(0x20, 0x05, 0x00, 0x02, dlcdata)) {
-      sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), dlcdata[2], dlcdata[3]);
+      unsigned int u = 0;
+      /*
+      if (hobd_protocol == 1) u = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
+      if (hobd_protocol == 2) u = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
+      u *= 4;
+      */
+      if (hobd_protocol == 1) u = (1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1)) * 4; // OBD1
+      if (hobd_protocol == 2) u = (dlcdata[2] * 256 + dlcdata[3]); // OBD2
+      sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(u), lowByte(u)); //((A*256)+B)/4
     }
     else {
       sprintf_P(btdata2, PSTR("DATA ERROR\r\n>"));
@@ -299,7 +375,9 @@ void procbtSerial(void) {
   }
   else if (!strcmp(btdata1, "0111")) { // tps (%)
     if (dlcCommand(0x20, 0x05, 0x14, 0x01, dlcdata)) {
-      sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), dlcdata[2]);
+      int i = (dlcdata[2] - 24) / 2;
+      if (i < 0) i = 0; // haxx
+      sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), i);
     }
     else {
       sprintf_P(btdata2, PSTR("DATA ERROR\r\n>"));
@@ -330,7 +408,8 @@ void procbtSerial(void) {
   }
   else if (!strcmp(btdata1, "0133")) { // baro (kPa)
     if (dlcCommand(0x20, 0x05, 0x13, 0x01, dlcdata)) {
-      sprintf_P(btdata2, PSTR("41 33 %02X\r\n>"), dlcdata[2]);
+      int i = dlcdata[2] * 0.716 - 5; // 101 kPa
+      sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), i);
     }
     else {
       sprintf_P(btdata2, PSTR("DATA ERROR\r\n>"));
@@ -399,6 +478,22 @@ void procbtSerial(void) {
       sprintf_P(btdata2, PSTR("NO DATA\r\n>"));
     }
   }
+  else if (!strcmp(btdata1, "200D")) { // custom hobd mapping / flags
+    if (dlcCommand(0x20, 0x05, 0x0D, 0x01, dlcdata)) {
+      sprintf_P(btdata2, PSTR("60 0D %02X\r\n>"), dlcdata[2]);
+    }
+    else {
+      sprintf_P(btdata2, PSTR("NO DATA\r\n>"));
+    }
+  }
+  else if (!strcmp(btdata1, "200E")) { // custom hobd mapping / flags
+    if (dlcCommand(0x20, 0x05, 0x0E, 0x01, dlcdata)) {
+      sprintf_P(btdata2, PSTR("60 0E %02X\r\n>"), dlcdata[2]);
+    }
+    else {
+      sprintf_P(btdata2, PSTR("NO DATA\r\n>"));
+    }
+  }
   else if (!strcmp(btdata1, "200F")) { // custom hobd mapping / flags
     if (dlcCommand(0x20, 0x05, 0x0F, 0x01, dlcdata)) {
       sprintf_P(btdata2, PSTR("60 0F %02X\r\n>"), dlcdata[2]);
@@ -421,7 +516,7 @@ void procdlcSerial(void) {
   //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
   //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
   byte data[20];
-  unsigned int rpm=0,vss=0,ect=0,iat=0,maps=0,baro=0,tps=0,volt=0, imap=0;
+  int rpm=0,vss=0,ect=0,iat=0,maps=0,baro=0,tps=0,volt=0, volt2=0,imap=0;
 
   if (dlcCommand(0x20,0x05,0x00,0x10,data)) { // row 1
     //rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
@@ -437,15 +532,26 @@ void procdlcSerial(void) {
     f = data[3];
     f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
     iat = round(f);
-    maps = data[4]; // data[4] * 0.716-5
-    baro = data[5]; // data[5] * 0.716-5
-    tps = data[6]; // (data[6] - 24) / 2;
+    maps = data[4] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
+    //baro = data[5] * 0.716 - 5;
+    tps = (data[6] - 24) / 2;
     f = data[9];
     f = (f / 10.45) * 10.0; // cV
     volt = round(f);
     //alt_fr = data[10] / 2.55
     //eld = 77.06 - data[11] / 2.5371
   }
+  
+  // critical ect value, alarm on
+  if (ect > 97) {
+    digitalWrite(13, HIGH);
+  }
+  else {
+    digitalWrite(13, LOW);
+  }
+  // tps offset, fix haxx
+  if (tps < 0) tps = 0;
+  //if (tps > 100) tps = 100;
   
   // IMAP = RPM * MAP / IAT / 2
   // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
@@ -456,40 +562,11 @@ void procdlcSerial(void) {
   maf = (imap / 120) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
 
   
-  // Read 1.1V reference against AVcc
-  // set the reference to Vcc and the measurement to the internal 1.1V reference
-  #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-    ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
-  #elif defined (__AVR_ATtiny24__) || defined(__AVR_ATtiny44__) || defined(__AVR_ATtiny84__)
-    ADMUX = _BV(MUX5) | _BV(MUX0);
-  #elif defined (__AVR_ATtiny25__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
-    ADMUX = _BV(MUX3) | _BV(MUX2);
-  #else
-    ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
-  #endif  
- 
-  delay(2); // Wait for Vref to settle
-  ADCSRA |= _BV(ADSC); // Start conversion
-  while (bit_is_set(ADCSRA,ADSC)); // measuring
- 
-  uint8_t low  = ADCL; // must read ADCL first - it then locks ADCH  
-  uint8_t high = ADCH; // unlocks both
- 
-  long vcc = (high<<8) | low;
- 
-  //result = 1125300L / result; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
-  vcc = 1125.3 / vcc; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
-  
-  // kerpz haxx
-  float R1 = 680000.0; // Resistance of R1
-  float R2 = 220000.0; // Resistance of R2
-  unsigned int volt2 = (((analogRead(14) * vcc) / 1024.0) / (R2/(R1+R2))) * 10.0; // convertion & voltage divider
-  //temp = ((analogRead(pinTemp) * vcc) / 1024.0) * 100.0; // LM35 celcius
-  
+  volt2 = readVoltage();
 
   // display
   // R0000 S000 V00.0
-  // E00 I00    V00.0
+  // E00 I00 M000 T00
   unsigned short i = 0;
   
   lcd.clear();
@@ -578,19 +655,31 @@ void setup()
   lcd.setCursor(0,1);
   lcd.print("LCD 16x2 Mode");
 
-  pinMode(13, OUTPUT);
+  pinMode(13, OUTPUT); // piezo buzzer
+  pinMode(17, OUTPUT); // door lock
+  pinMode(18, OUTPUT); // door unlock
+  
+  // initial beep
+  for (int i=0; i<3; i++) {
+    digitalWrite(13, HIGH);
+    delay(50);
+    digitalWrite(13, LOW);
+    delay(80);
+  }
 }
 
 void loop() {
   btSerial.listen();
   delay(300);
   if (btSerial.available()) {
-    elm_mode = true;
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Honda OBD v1.0");
-    lcd.setCursor(0,1);
-    lcd.print("Bluetooth Mode");
+    if (!elm_mode) {
+      elm_mode = true;
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Honda OBD v1.0");
+      lcd.setCursor(0,1);
+      lcd.print("Bluetooth Mode");
+    }
     procbtSerial();
   }
   if (!elm_mode) {
