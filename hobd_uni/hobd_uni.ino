@@ -176,29 +176,32 @@ void procbtSerial(void) {
   else if (!strcmp(btdata1, "ATZ")) { // reset all / general
     sprintf_P(btdata2, PSTR("Honda OBD v1.0\r\n>"));
   }
-  else if (strstr(btdata1, "ATE")) { // echo on/off / general
+  else if (strlen(btdata1) == 4 && strstr(btdata1, "ATE")) { // echo on/off / general
     elm_echo = (btdata1[3] == '1' ? true : false);
     sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
-  else if (strstr(btdata1, "ATL")) { // linfeed on/off / general
+  else if (strlen(btdata1) == 4 && strstr(btdata1, "ATL")) { // linfeed on/off / general
     elm_linefeed = (btdata1[3] == '1' ? true : false);
     sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
-  else if (strstr(btdata1, "ATM")) { // memory on/off / general
+  else if (strlen(btdata1) == 4 && strstr(btdata1, "ATM")) { // memory on/off / general
     elm_memory = (btdata1[3] == '1' ? true : false);
     sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
-  else if (strstr(btdata1, "ATS")) { // space on/off / obd
+  else if (strlen(btdata1) == 4 && strstr(btdata1, "ATS")) { // space on/off / obd
     elm_space = (btdata1[3] == '1' ? true : false);
     sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
-  else if (strstr(btdata1, "ATH")) { // headers on/off / obd
+  else if (strlen(btdata1) == 4 && strstr(btdata1, "ATH")) { // headers on/off / obd
     elm_header = (btdata1[3] == '1' ? true : false);
     sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
-  else if (!strcmp(btdata1, "ATSP")) { // set protocol to ? and save it / obd
-    //elm_protocol = atoi(data[4]);
+  else if (strlen(btdata1) == 5 && strstr(btdata1, "ATSP")) { // set protocol to ? and save it / obd
+    //elm_protocol = atoi(btdata1[4]);
     sprintf_P(btdata2, PSTR("OK\r\n>"));
+  }
+  else if (!strcmp(btdata1, "ATDP")) { // display protocol / obd
+    sprintf_P(btdata2, PSTR("AUTO\r\n>"));
   }
   else if (!strcmp(btdata1, "ATRV")) { // read voltage in float / volts
     //btSerial.print("12.0V\r\n>");
@@ -210,9 +213,14 @@ void procbtSerial(void) {
     sprintf_P(btdata2, PSTR("%d.%dV\r\n>"), v1, v2);
   }
   // kerpz custom cmd/pid
-  else if (strstr(btdata1, "ATHOBD")) { // set hobd protocol
-    hobd_protocol = (byte)btdata1[6];
+  else if (strlen(btdata1) == 6 && strstr(btdata1, "ATSHP")) { // set hobd protocol
+    if (btdata1[5] == '0') hobd_protocol = 0;
+    if (btdata1[5] == '1') hobd_protocol = 1;
+    if (btdata1[5] == '2') hobd_protocol = 2;
     sprintf_P(btdata2, PSTR("OK\r\n>"));
+  }
+  else if (!strcmp(btdata1, "ATDHP")) { // set hobd protocol
+    sprintf_P(btdata2, PSTR("HOBD%d\r\n>"), hobd_protocol);
   }
   else if (strstr(btdata1, "AT13")) { // pin 13 test  // T = toggle, 1 = on, 0 = off
     if (btdata1[4] == 'T') {
