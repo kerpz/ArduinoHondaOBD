@@ -50,6 +50,8 @@ LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 SoftwareSerialWithHalfDuplex btSerial(10, 11); // RX, TX
 SoftwareSerialWithHalfDuplex dlcSerial(12, 12, false, false);
 
+#define runEvery(t) for (static typeof(t) _lasttime;(typeof(t))((typeof(t))millis() - _lasttime) > (t);_lasttime += (t))
+
 bool elm_mode = false;
 bool elm_memory = false;
 bool elm_echo = false;
@@ -84,7 +86,7 @@ void dlcInit() {
 int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
   byte crc = (0xFF - (cmd + num + loc + len - 0x01)); // checksum FF - (cmd + num + loc + len - 0x01)
 
-  unsigned long timeOut = millis() + 250; // timeout @ 250 ms
+  unsigned long timeOut = millis() + 200; // timeout @ 200 ms
   memset(data, 0, sizeof(data));
 
   dlcSerial.listen();
@@ -219,7 +221,7 @@ void procbtSerial(void) {
     if (btdata1[5] == '2') hobd_protocol = 2;
     sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
-  else if (!strcmp(btdata1, "ATDHP")) { // set hobd protocol
+  else if (!strcmp(btdata1, "ATDHP")) { // display hobd protocol
     sprintf_P(btdata2, PSTR("HOBD%d\r\n>"), hobd_protocol);
   }
   else if (strstr(btdata1, "AT13")) { // pin 13 test  // T = toggle, 1 = on, 0 = off
@@ -257,6 +259,12 @@ void procbtSerial(void) {
   else if (!strcmp(btdata1, "04")) { // clear dtc / stored values
     dlcCommand(0x21, 0x04, 0x01, 0x00, dlcdata); // reset ecu
     sprintf_P(btdata2, PSTR("OK\r\n>"));
+  }
+  else if (!strcmp(btdata1, "03")) { // request dtc
+    // do scan then report the errors
+    // 43 01 33 00 00 00 00 = P0133
+    //sprintf_P(btdata2, PSTR("43 01 33 00 00 00 00\r\n>"), a);
+    //sprintf_P(btdata2, PSTR("OK\r\n>"));
   }
   else if (!strcmp(btdata1, "0100")) {
     sprintf_P(btdata2, PSTR("41 00 BE 3E B0 11\r\n>"));
@@ -524,7 +532,10 @@ void procdlcSerial(void) {
   //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
   //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
   byte data[20];
-  int rpm=0,vss=0,ect=0,iat=0,maps=0,baro=0,tps=0,volt=0, volt2=0,imap=0;
+  unsigned int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,volt=0,volt2=0,imap=0;
+
+  static unsigned long vsssum=0,counter=0,distance=0;
+  static byte vss=0,vsstop=0,vssavg=0;
 
   if (dlcCommand(0x20,0x05,0x00,0x10,data)) { // row 1
     //rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
@@ -549,14 +560,30 @@ void procdlcSerial(void) {
     //alt_fr = data[10] / 2.55
     //eld = 77.06 - data[11] / 2.5371
   }
-  
-  // critical ect value, alarm on
-  if (ect > 97) {
+
+  if (vss > vsstop) { // top speed
+    vsstop = vss;
+  }
+
+  if (rpm > 0) { // running
+    vsssum += vss;
+    counter ++;
+    vssavg = (vsssum / counter);
+
+    float d;
+    d = vssavg;
+    d = (( d / 3600) * 1000) * (counter / 4);
+    distance = round(d);
+  }
+
+  // critical ect value or speed limit, alarm on
+  if (ect > 97 || vss > 100) {
     digitalWrite(13, HIGH);
   }
   else {
     digitalWrite(13, LOW);
   }
+
   // tps offset, fix haxx
   if (tps < 0) tps = 0;
   //if (tps > 100) tps = 100;
@@ -572,12 +599,15 @@ void procdlcSerial(void) {
   
   volt2 = readVoltage();
 
-  // display
-  // R0000 S000 V00.0
-  // E00 I00 M000 T00
   unsigned short i = 0;
   
-  lcd.clear();
+  //lcd.clear();
+  
+  /*
+  // display 1
+  // R0000 S000 V00.0
+  // E00 I00 T00 M000
+
   lcd.setCursor(0,0);
 
   lcd.print("R");
@@ -629,6 +659,14 @@ void procdlcSerial(void) {
 
   lcd.print(" ");
 
+  lcd.print("T");
+  i = tps;
+  lcd.print(i/10);
+  i %= 10;
+  lcd.print(i);
+
+  lcd.print(" ");
+
   lcd.print("M");
   i = maps;
   lcd.print(i/100);
@@ -636,18 +674,102 @@ void procdlcSerial(void) {
   lcd.print(i/10);
   i %= 10;
   lcd.print(i);
-  
-  lcd.print(" ");
+  */
 
-  lcd.print("T");
-  i = tps;
+  
+  // display 2 // trip computer
+  // S000 000 000 E00
+  // T000000  D000000
+  lcd.setCursor(0,0);
+
+  lcd.print("S");
+  i = vss;
+  lcd.print(i/100);
+  i %= 100;
   lcd.print(i/10);
   i %= 10;
   lcd.print(i);
+  lcd.print(" ");
+
+  i = vssavg;
+  lcd.print(i/100);
+  i %= 100;
+  lcd.print(i/10);
+  i %= 10;
+  lcd.print(i);
+  lcd.print(" ");
+
+  i = vsstop;
+  lcd.print(i/100);
+  i %= 100;
+  lcd.print(i/10);
+  i %= 10;
+  lcd.print(i);
+  lcd.print(" ");
+
+  lcd.print("E");
+  i = ect;
+  lcd.print(i/10);
+  i %= 10;
+  lcd.print(i);
+
+  lcd.setCursor(0,1);
+
+  lcd.print("T");
+  i = counter / 4; // running time in second // divide 4 @ 250ms
+  lcd.print(i/100000);
+  i %= 100000;
+  lcd.print(i/10000);
+  i %= 10000;
+  lcd.print(i/1000);
+  i %= 1000;
+  lcd.print(i/100);
+  i %= 100;
+  lcd.print(i/10);
+  i %= 10;
+  lcd.print(i);
+
+  lcd.print("  ");
+
+  lcd.print("D");
+  i = distance;
+  lcd.print(i/100000);
+  i %= 100000;
+  lcd.print(i/10000);
+  i %= 10000;
+  lcd.print(i/1000);
+  i %= 1000;
+  lcd.print(i/100);
+  i %= 100;
+  lcd.print(i/10);
+  i %= 10;
+  lcd.print(i);
+
 }  
+
+void scanDTC()
+{
+  byte data[20];
+
+  if (dlcCommand(0x20,0x05,0x40,0x10,data)) { // row 1
+  }
+  if (dlcCommand(0x20,0x05,0x50,0x10,data)) { // row 2
+  }
+  // shift 4 bits left and right to get a value
+  // 40 0=ecu 1=o2a
+  // 41 2=o2b 3=map
+  // 42 4=ckp 5=map
+  // 43 6=ect 7=tps
+  // 44 8=tdc 9=cyp
+  // 45 10=iat
+  // 46 12=egr 13=baro
+  // 47 14=iac 15=ign
+  // 48 16=vss
+}
 
 void setup()
 {
+  //Serial.begin(115200);
   //Serial.begin(9600);
   btSerial.begin(9600);
   dlcSerial.begin(9600);
@@ -677,21 +799,23 @@ void setup()
 }
 
 void loop() {
-  btSerial.listen();
-  delay(300);
-  if (btSerial.available()) {
-    if (!elm_mode) {
-      elm_mode = true;
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("Honda OBD v1.0");
-      lcd.setCursor(0,1);
-      lcd.print("Bluetooth Mode");
+  runEvery(250) {
+    btSerial.listen();
+    //delay(300);
+    if (btSerial.available()) {
+      if (!elm_mode) {
+        elm_mode = true;
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Honda OBD v1.0");
+        lcd.setCursor(0,1);
+        lcd.print("Bluetooth Mode");
+      }
+      procbtSerial();
     }
-    procbtSerial();
-  }
-  if (!elm_mode) {
-    procdlcSerial();
+    if (!elm_mode) {
+      procdlcSerial();
+    }
   }
 }
 
