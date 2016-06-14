@@ -87,7 +87,7 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
   byte crc = (0xFF - (cmd + num + loc + len - 0x01)); // checksum FF - (cmd + num + loc + len - 0x01)
 
   unsigned long timeOut = millis() + 200; // timeout @ 200 ms
-  memset(data, 0, sizeof(data));
+  //memset(data, 0, sizeof(data));
 
   dlcSerial.listen();
 
@@ -147,12 +147,12 @@ unsigned int readVoltage(void) {
 }
 
 void procbtSerial(void) {
-  char btdata1[20];  // bt data in buffer
-  char btdata2[20];  // bt data out buffer
-  byte dlcdata[20];  // dlc data buffer
+  char btdata1[20]={0};  // bt data in buffer
+  char btdata2[20]={0};  // bt data out buffer
+  byte dlcdata[20]={0};  // dlc data buffer
   int i = 0;
 
-  memset(btdata1, 0, sizeof(btdata1));
+  //memset(btdata1, 0, sizeof(btdata1));
   while (i < 20)
   {
     if (btSerial.available()) {
@@ -167,7 +167,7 @@ void procbtSerial(void) {
     }
   }
 
-  memset(btdata2, 0, sizeof(btdata2));
+  //memset(btdata2, 0, sizeof(btdata2));
 
   if (!strcmp(btdata1, "ATD")) {
     sprintf_P(btdata2, PSTR("OK\r\n>"));
@@ -534,7 +534,7 @@ void procdlcSerial(void) {
   byte data[20];
   unsigned int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,volt=0,volt2=0,imap=0;
 
-  static unsigned long vsssum=0,counter=0,distance=0;
+  static unsigned long vsssum=0,running_time=0,idle_time=0,distance=0;
   static byte vss=0,vsstop=0,vssavg=0;
 
   if (dlcCommand(0x20,0x05,0x00,0x10,data)) { // row 1
@@ -565,15 +565,25 @@ void procdlcSerial(void) {
     vsstop = vss;
   }
 
-  if (rpm > 0) { // running
-    vsssum += vss;
-    counter ++;
-    vssavg = (vsssum / counter);
-
-    float d;
-    d = vssavg;
-    d = (( d / 3600) * 1000) * (counter / 4);
-    distance = round(d);
+  if (rpm > 0) {
+    if (vss > 0) { // running time
+        running_time ++;
+        vsssum += vss;
+        vssavg = (vsssum / running_time);
+  
+        float d;
+        d = vssavg;
+        d = ((d * 1000) / 14400) * running_time; // @ 250ms
+        distance = round(d);
+        //d = vss; // instant distance
+        //d = (d * 1000) / 14400; // @ 250ms
+        //distance += round(d);
+    
+        // time = distance / speed
+    }
+    else { // idle time
+        idle_time ++;
+    }
   }
 
   // critical ect value or speed limit, alarm on
@@ -599,7 +609,7 @@ void procdlcSerial(void) {
   
   volt2 = readVoltage();
 
-  unsigned short i = 0;
+  unsigned long i = 0;
   
   //lcd.clear();
   
@@ -684,6 +694,8 @@ void procdlcSerial(void) {
 
   lcd.print("S");
   i = vss;
+  //Serial.print("VSS: ");
+  //Serial.println(i);
   lcd.print(i/100);
   i %= 100;
   lcd.print(i/10);
@@ -692,6 +704,8 @@ void procdlcSerial(void) {
   lcd.print(" ");
 
   i = vssavg;
+  //Serial.print("VSSavg: ");
+  //Serial.println(i);
   lcd.print(i/100);
   i %= 100;
   lcd.print(i/10);
@@ -700,6 +714,8 @@ void procdlcSerial(void) {
   lcd.print(" ");
 
   i = vsstop;
+  //Serial.print("VSStop: ");
+  //Serial.println(i);
   lcd.print(i/100);
   i %= 100;
   lcd.print(i/10);
@@ -716,7 +732,9 @@ void procdlcSerial(void) {
   lcd.setCursor(0,1);
 
   lcd.print("T");
-  i = counter / 4; // running time in second // divide 4 @ 250ms
+  i = (idle_time + running_time) / 4; // running time in second @ 250ms
+  //Serial.print("Time: ");
+  //Serial.println(i);
   lcd.print(i/100000);
   i %= 100000;
   lcd.print(i/10000);
@@ -733,6 +751,8 @@ void procdlcSerial(void) {
 
   lcd.print("D");
   i = distance;
+  //Serial.print("Distance: ");
+  //Serial.println(i);
   lcd.print(i/100000);
   i %= 100000;
   lcd.print(i/10000);
@@ -769,8 +789,7 @@ void scanDTC()
 
 void setup()
 {
-  //Serial.begin(115200);
-  //Serial.begin(9600);
+  //Serial.begin(115200); // for debugging
   btSerial.begin(9600);
   dlcSerial.begin(9600);
 
@@ -799,9 +818,10 @@ void setup()
 }
 
 void loop() {
+  static unsigned long btTick = 0;
+  btSerial.listen();
+  //delay(300);
   runEvery(250) {
-    btSerial.listen();
-    //delay(300);
     if (btSerial.available()) {
       if (!elm_mode) {
         elm_mode = true;
@@ -812,10 +832,15 @@ void loop() {
         lcd.print("Bluetooth Mode");
       }
       procbtSerial();
+      btTick = millis();
     }
     if (!elm_mode) {
       procdlcSerial();
     }
+  }
+  
+  if (millis() - btTick >= 2000) { // bt timeout 2 secs
+    elm_mode = false;
   }
 }
 
