@@ -87,6 +87,9 @@ Screenshots (Andorid App TORQUE)
 
 TODO
 -----
-* ECU detection (Obd1 or Obd2)
-* Fault codes reader
-* Integrate smart keyless entry via smart phone
+* ECU detection (Obd1 or Obd2) (How?)
+* Fault codes reader (Work on progress)
+* Navigation buttons using Analog input (up,down,left,right,select/enter) (DFRobot style)
+* Add 128x64 LCD @ SPI support
+* Add 20x4 LDC @ I2C support
+* Integrate smart keyless entry via smart phone (Optional)
