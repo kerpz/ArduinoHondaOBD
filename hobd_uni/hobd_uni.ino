@@ -18,12 +18,14 @@
    http://www.installuniversity.com/install_university/installu_articles/volumetric_efficiency/ve_computation_9.012000.htm
 */
 //#define PCINT0_vect FALSE
-#define PCINT1_vect FALSE
+//#define PCINT1_vect FALSE
 //#define PCINT2_vect FALSE
 //#define PCINT3_vect FALSE
 
+#include <EEPROM.h>
 #include <LiquidCrystal.h>
 #include <SoftwareSerialWithHalfDuplex.h>
+
 
 // input signals: ign, door
 // output signals: alarm horn, lock door, unlock door, immobilizer
@@ -66,8 +68,6 @@ LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 SoftwareSerialWithHalfDuplex btSerial(10, 11); // RX, TX
 SoftwareSerialWithHalfDuplex dlcSerial(12, 12, false, false);
 
-//#define runEvery(t) for (static typeof(t) _lasttime;(typeof(t))((typeof(t))millis() - _lasttime) > (t);_lasttime += (t))
-
 bool elm_mode = false;
 bool elm_memory = false;
 bool elm_echo = false;
@@ -76,11 +76,13 @@ bool elm_linefeed = false;
 bool elm_header = false;
 int  elm_protocol = 0; // auto
 
-byte hobd_protocol = 2; // 0 = obd0, 1 = obd1, 2 = obd2
-bool pin_13 = false;
+byte obd_select = 2; // 0 = obd0, 1 = obd1, 2 = obd2
+byte pag_select = 0; // lcd page
 
-byte pag_select = 0;   // page
-//bool mod_select = 0;   // mode / 0 = lcd, 1 = elm
+byte ect_alarm = 98; // celcius
+byte vss_alarm = 100; // kph
+
+bool pin_13 = false;
 
 
 void bt_write(char *str) {
@@ -224,7 +226,6 @@ void procbtSerial(void) {
       btdata1[i] = toupper(btSerial.read());
       if (btdata1[i] == '\r') { // terminate at \r
         btdata1[i] = '\0';
-        Serial.println(btdata1);
   
         if (!strcmp(btdata1, "ATD")) {
           sprintf_P(btdata2, PSTR("OK\r\n>"));
@@ -271,30 +272,22 @@ void procbtSerial(void) {
           v2 = volt2;
           sprintf_P(btdata2, PSTR("%d.%dV\r\n>"), v1, v2);
         }
-        // kerpz custom cmd/pid
+        // kerpz custom AT cmd
         else if (strlen(btdata1) == 6 && strstr(btdata1, "ATSHP")) { // set hobd protocol
-          if (btdata1[5] == '0') hobd_protocol = 0;
-          if (btdata1[5] == '1') hobd_protocol = 1;
-          if (btdata1[5] == '2') hobd_protocol = 2;
+          if (btdata1[5] == '0') { obd_select = 0; }
+          if (btdata1[5] == '1') { obd_select = 1; }
+          if (btdata1[5] == '2') { obd_select = 2; }
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (!strcmp(btdata1, "ATDHP")) { // display hobd protocol
-          sprintf_P(btdata2, PSTR("HOBD%d\r\n>"), hobd_protocol);
+          sprintf_P(btdata2, PSTR("HOBD%d\r\n>"), obd_select);
         }
         else if (strstr(btdata1, "AT13")) { // pin 13 test  // T = toggle, 1 = on, 0 = off
-          if (btdata1[4] == 'T') {
-            pin_13 = !pin_13;
-          }
-          else {
-            pin_13 = (bool)btdata1[4];
-          }
+          if (btdata1[4] == 'T') { pin_13 = !pin_13; }
+          else { pin_13 = btdata1[4]; }
           
-          if (pin_13 == false) {
-            digitalWrite(13, LOW);
-          }
-          else if (pin_13 == true) {
-            digitalWrite(13, HIGH);
-          }
+          if (pin_13 == false) { digitalWrite(13, LOW); }
+          else if (pin_13 == true) { digitalWrite(13, HIGH); }
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (strstr(btdata1, "AT17")) { // door lock signal @ pin 17
@@ -309,6 +302,7 @@ void procbtSerial(void) {
           digitalWrite(18, LOW);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
+        
         // sprintf_P(cmd_str, PSTR("%02X%02X\r"), mode, pid);
         // sscanf(data, "%02X%02X", mode, pid)
         // reset dtc/ecu honda
@@ -383,12 +377,12 @@ void procbtSerial(void) {
           if (dlcCommand(0x20, 0x05, 0x00, 0x02, dlcdata)) {
             unsigned int u = 0;
             /*
-            if (hobd_protocol == 1) u = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
-            if (hobd_protocol == 2) u = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
+            if (obd_select == 1) u = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
+            if (obd_select == 2) u = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
             u *= 4;
             */
-            if (hobd_protocol == 1) u = (1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1)) * 4; // OBD1
-            if (hobd_protocol == 2) u = (dlcdata[2] * 256 + dlcdata[3]); // OBD2
+            if (obd_select == 1) { u = (1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1)) * 4; } // OBD1
+            if (obd_select == 2) { u = (dlcdata[2] * 256 + dlcdata[3]); } // OBD2
             sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(u), lowByte(u)); //((A*256)+B)/4
           }
         }
@@ -459,45 +453,30 @@ void procbtSerial(void) {
             sprintf_P(btdata2, PSTR("41 45 %02X\r\n>"), dlcdata[2]);
           }
         }
-        else if (!strcmp(btdata1, "2008")) { // custom hobd mapping / flags
-          if (dlcCommand(0x20, 0x05, 0x08, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("60 08 %02X\r\n>"), dlcdata[2]);
+        
+        // direct honda PID access
+        // 1 byte access (20AA) // 20 = 1 byte, AA = address
+        else if (btdata1[0] == '2' && btdata1[1] == '0') {
+          byte addr = ((btdata1[2] > '9')? (btdata1[2] &~ 0x20) - 'A' + 10: (btdata1[2] - '0') * 16) +
+                      ((btdata1[3] > '9')? (btdata1[3] &~ 0x20) - 'A' + 10: (btdata1[3] - '0'));
+          if (dlcCommand(0x20, 0x05, addr, 0x01, dlcdata)) {
+            sprintf_P(btdata2, PSTR("60 %02X %02X\r\n>"), addr, dlcdata[2]);
           }
         }
-        else if (!strcmp(btdata1, "2009")) { // custom hobd mapping / flags
-          if (dlcCommand(0x20, 0x05, 0x09, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("60 09 %02X\r\n>"), dlcdata[2]);
+        // 2 bytes access (22AA) // 22 = 2 bytes, AA = address
+        else if (btdata1[0] == '2' && btdata1[1] == '2') {
+          byte addr = ((btdata1[2] > '9')? (btdata1[2] &~ 0x20) - 'A' + 10: (btdata1[2] - '0') * 16) +
+                      ((btdata1[3] > '9')? (btdata1[3] &~ 0x20) - 'A' + 10: (btdata1[3] - '0'));
+          if (dlcCommand(0x20, 0x05, addr, 0x02, dlcdata)) {
+            sprintf_P(btdata2, PSTR("60 %02X %02X %02X\r\n>"), addr, dlcdata[2], dlcdata[3]);
           }
         }
-        else if (!strcmp(btdata1, "200A")) { // custom hobd mapping / flags
-          if (dlcCommand(0x20, 0x05, 0x0A, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("60 0A %02X\r\n>"), dlcdata[2]);
-          }
-        }
-        else if (!strcmp(btdata1, "200B")) { // custom hobd mapping / flags
-          //sprintf_P(btdata2, PSTR("60 0C AA\r\n>")); // 10101010 / test data
-          if (dlcCommand(0x20, 0x05, 0x0B, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("60 0B %02X\r\n>"), dlcdata[2]);
-          }
-        }
-        else if (!strcmp(btdata1, "200C")) { // custom hobd mapping / flags
-          if (dlcCommand(0x20, 0x05, 0x0C, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("60 0C %02X\r\n>"), dlcdata[2]);
-          }
-        }
-        else if (!strcmp(btdata1, "200D")) { // custom hobd mapping / flags
-          if (dlcCommand(0x20, 0x05, 0x0D, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("60 0D %02X\r\n>"), dlcdata[2]);
-          }
-        }
-        else if (!strcmp(btdata1, "200E")) { // custom hobd mapping / flags
-          if (dlcCommand(0x20, 0x05, 0x0E, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("60 0E %02X\r\n>"), dlcdata[2]);
-          }
-        }
-        else if (!strcmp(btdata1, "200F")) { // custom hobd mapping / flags
-          if (dlcCommand(0x20, 0x05, 0x0F, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("60 0F %02X\r\n>"), dlcdata[2]);
+        // 4 byte access (24AA) // 24 = 4 bytes, AA = address
+        else if (btdata1[0] == '2' && btdata1[1] == '4') {
+          byte addr = ((btdata1[2] > '9')? (btdata1[2] &~ 0x20) - 'A' + 10: (btdata1[2] - '0') * 16) +
+                      ((btdata1[3] > '9')? (btdata1[3] &~ 0x20) - 'A' + 10: (btdata1[3] - '0'));
+          if (dlcCommand(0x20, 0x05, addr, 0x04, dlcdata)) {
+            sprintf_P(btdata2, PSTR("60 %02X %02X %02X %02X %02X\r\n>"), addr, dlcdata[2], dlcdata[3], dlcdata[4], dlcdata[5]);
           }
         }
 
@@ -583,16 +562,12 @@ void procdlcSerial(void) {
     }
   
     // critical ect value or speed limit, alarm on
-    if (ect > 97 || vss > 100) {
-      digitalWrite(13, HIGH);
-    }
-    else {
-      digitalWrite(13, LOW);
-    }
+    if (ect > ect_alarm || vss > vss_alarm) { digitalWrite(13, HIGH); }
+    else { digitalWrite(13, LOW); }
   
     // tps offset, fix haxx
-    if (tps < 0) tps = 0;
-    //if (tps > 100) tps = 100;
+    //if (tps < 0) { tps = 0; }
+    //if (tps > 100) { tps = 100; }
     
     // IMAP = RPM * MAP / IAT / 2
     // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
@@ -609,7 +584,7 @@ void procdlcSerial(void) {
     if (pag_select == 0) {
       // display 1
       // R0000 S000 V00.0
-      // E00 I00 T00 M000
+      // E00 I00 M000 T00
     
       lcd.setCursor(0,0);
     
@@ -638,13 +613,13 @@ void procdlcSerial(void) {
     
       lcd.print(" ");
     
-      lcd.print("T");
-      lcdZeroPaddedPrint(tps, 2);
-    
-      lcd.print(" ");
-    
       lcd.print("M");
       lcdZeroPaddedPrint(maps, 3);
+
+      lcd.print(" ");
+    
+      lcd.print("T");
+      lcdZeroPaddedPrint(tps, 2);
     }
     else if (pag_select == 1) {
       // display 2 // trip computer
@@ -672,29 +647,101 @@ void procdlcSerial(void) {
       lcd.print("D");
       lcdZeroPaddedPrint(distance, 6);
     }
+    else if (pag_select == 2) {
+      byte errnum, errcnt = 0, i;
+
+      //byte hbits = i >> 4;
+      //byte lbits = i & 0xf;
+
+      //lcd.clear();
+    
+      // display up to 10 error codes
+      // 00 00 00 00 00 
+      // 00 00 00 00 00
+      lcd.setCursor(0,0);
+      if (dlcCommand(0x20,0x05,0x40,0x10,data)) { // row 1
+        for (i=0; i<16; i++) {
+          if (data[i+2] >> 4) {
+            errnum = i*2;
+            if (errnum < 10) { lcd.print("0"); }
+            lcd.print(errnum);
+            lcd.print(" ");
+            errcnt++;
+          }   
+          else if (data[i+2] & 0xf) {
+            errnum = (i*2)+1;
+            if (errnum < 10) { lcd.print("0"); }
+            lcd.print(errnum);
+            lcd.print(" ");
+            errcnt++;
+          }
+          if (errcnt > 5) {
+            lcd.print(" ");
+            lcd.setCursor(0,1);
+          }
+          if (errcnt > 10) {
+            lcd.print(" ");
+            break;
+          }
+        }
+      }
+      //lcd.setCursor(0,1);
+      if (dlcCommand(0x20,0x05,0x50,0x10,data)) { // row 2
+        for (i=0; i<16; i++) {
+          if (data[i+2] >> 4) {
+            errnum = (i*2)+32;
+            if (errnum < 10) { lcd.print("0"); }
+            lcd.print(errnum);
+            lcd.print(" ");
+            errcnt++;
+          }   
+          else if (data[i+2] & 0xf) {
+            errnum = (i*2)+33;
+            if (errnum < 10) { lcd.print("0"); }
+            lcd.print(errnum);
+            lcd.print(" ");
+            errcnt++;
+          }
+          if (errcnt > 5) {
+            lcd.print(" ");
+            lcd.setCursor(0,1);
+          }
+          if (errcnt > 10) {
+            lcd.print(" ");
+            break;
+          }
+        }
+      }
+      if (errcnt == 0) {
+        lcd.print("    NO ERROR    ");
+        lcd.print("                ");
+      }
+      else {
+        for (i=errcnt; i<10; i++) {
+          lcd.print("   ");
+          if (i > 5) {
+            lcd.print(" ");
+            lcd.setCursor(0,1);
+          }
+          if (i > 10) {
+            lcd.print(" ");
+            break;
+          }
+        }
+      }
+      // shift 4 bits left and right to get a value
+      // 40 0=ecu 1=o2a
+      // 41 2=o2b 3=map
+      // 42 4=ckp 5=map
+      // 43 6=ect 7=tps
+      // 44 8=tdc 9=cyp
+      // 45 10=iat
+      // 46 12=egr 13=baro
+      // 47 14=iac 15=ign
+      // 48 16=vss
+    }
   }
 }  
-
-void scanDTC()
-{
-  byte data[20];
-
-  if (dlcCommand(0x20,0x05,0x40,0x10,data)) { // row 1
-  }
-  if (dlcCommand(0x20,0x05,0x50,0x10,data)) { // row 2
-  }
-  // shift 4 bits left and right to get a value
-  // 40 0=ecu 1=o2a
-  // 41 2=o2b 3=map
-  // 42 4=ckp 5=map
-  // 43 6=ect 7=tps
-  // 44 8=tdc 9=cyp
-  // 45 10=iat
-  // 46 12=egr 13=baro
-  // 47 14=iac 15=ign
-  // 48 16=vss
-}
-
 
 void procButtons() {
   static unsigned long buttonsTick = 0;
@@ -704,29 +751,27 @@ void procButtons() {
 
   if (button_press_new != button_press_old) { // change state
     if (button_press_new == HIGH) { // on released
-      //Serial.println("Released");
       if (millis() - buttonsTick >= 5000) { // long press 5 secs
-        Serial.println("Long Pressed 5 secs");
-        // save current settings to eeprom @ 5 secs (pag_select, mod_select)
-        
+        //scanDTC();
+        //resetECU();
       }
       else if (millis() - buttonsTick >= 3000) { // long press 3 secs
-        Serial.println("Long Pressed 3 secs");
-        // code here
-        //mod_select = !mod_select;
-        //Serial.println(mod_select);
+        obd_select++;
+        if (obd_select > 2) {
+          obd_select = 0;
+        }
+        EEPROM.write(0, obd_select);
       }
       else if (millis() - buttonsTick >= 5) { // short press 5 ms
-        Serial.println("Short Pressed");
-        // code here
         pag_select++;
-        if (pag_select > 1) pag_select = 0;
-        //Serial.println(pag_select);
+        if (pag_select > 2) {
+          pag_select = 0;
+        }
+        EEPROM.write(1, pag_select);
       }
-      buttonsTick = 0;
+      buttonsTick = 0; // reset timer
     }
     else { // on pressed
-      //Serial.println("Pressed");
       buttonsTick = millis(); // start timer
     }
     button_press_old = button_press_new;
@@ -742,17 +787,11 @@ void setup()
   pinMode(19, INPUT); // button(s)
   digitalWrite(19, HIGH); // Configure internal pull-up resistor
   
-  Serial.begin(115200); // for debugging
+  //Serial.begin(115200); // for debugging
   btSerial.begin(9600);
   dlcSerial.begin(9600);
 
   lcd.begin(0, 2); // sets the LCD's rows and colums:
-
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Honda OBD v1.0");
-  lcd.setCursor(0,1);
-  lcd.print("LCD 16x2 Mode");
 
   // initial beep
   for (int i=0; i<3; i++) {
@@ -761,8 +800,28 @@ void setup()
     digitalWrite(13, LOW);
     delay(80);
   }
+  
+  if (EEPROM.read(0) == 0xff) { EEPROM.write(0, obd_select); }
+  if (EEPROM.read(1) == 0xff) { EEPROM.write(0, pag_select); }
+  //if (EEPROM.read(2) == 0xff) { EEPROM.write(0, ect_alarm); }
+  //if (EEPROM.read(3) == 0xff) { EEPROM.write(0, vss_alarm); }
+  
+  obd_select = EEPROM.read(0);
+  pag_select = EEPROM.read(1);
+  //ect_alarm = EEPROM.read(2); // over heat ???
+  //vss_alarm = EEPROM.read(3); // over speed ???
 
+  
   dlcInit();
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Honda OBD v1.0");
+  lcd.setCursor(0,1);
+  lcd.print("OBD Select: ");
+  lcd.print(obd_select);
+
+  delay(1000);
 }
 
 void loop() {
@@ -776,9 +835,10 @@ void loop() {
       elm_mode = true;
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Honda OBD v1.0");
-      lcd.setCursor(0,1);
       lcd.print("Bluetooth Mode");
+      lcd.setCursor(0,1);
+      lcd.print("OBD Select: ");
+      lcd.print(obd_select);
     }
     procbtSerial();
     btTick = millis();
