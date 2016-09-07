@@ -277,6 +277,7 @@ void procbtSerial(void) {
           if (btdata1[5] == '0') { obd_select = 0; }
           if (btdata1[5] == '1') { obd_select = 1; }
           if (btdata1[5] == '2') { obd_select = 2; }
+          EEPROM.write(0, obd_select);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (!strcmp(btdata1, "ATDHP")) { // display hobd protocol
@@ -513,8 +514,8 @@ void procdlcSerial(void) {
     static byte vss=0,vsstop=0,vssavg=0;
   
     if (dlcCommand(0x20,0x05,0x00,0x10,data)) { // row 1
-      //rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
-      rpm = (data[2] * 256 + data[3]) / 4; // OBD2
+      if (obd_select == 1) rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
+      if (obd_select == 2) rpm = (data[2] * 256 + data[3]) / 4; // OBD2
       vss = data[4];
     }
     
@@ -660,7 +661,7 @@ void procdlcSerial(void) {
       // 00 00 00 00 00
       lcd.setCursor(0,0);
       if (dlcCommand(0x20,0x05,0x40,0x10,data)) { // row 1
-        for (i=0; i<16; i++) {
+        for (i=0; i<14; i++) {
           if (data[i+2] >> 4) {
             errnum = i*2;
             if (errnum < 10) { lcd.print("0"); }
@@ -670,6 +671,8 @@ void procdlcSerial(void) {
           }   
           else if (data[i+2] & 0xf) {
             errnum = (i*2)+1;
+            // haxx
+            if (i>10) errnum = i*2;
             if (errnum < 10) { lcd.print("0"); }
             lcd.print(errnum);
             lcd.print(" ");
@@ -714,6 +717,7 @@ void procdlcSerial(void) {
       }
       if (errcnt == 0) {
         lcd.print("    NO ERROR    ");
+        lcd.setCursor(0,1);
         lcd.print("                ");
       }
       else {
