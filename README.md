@@ -92,6 +92,7 @@ NOTES
 * Added 128x64 LCD @ SPI support
 * Added 20x4 LDC @ I2C support
 * Added smart keyless entry via smart phone
+* Tested on P2T ODB2 and P30 ODB1 chipped
 
 TODO
 -----
