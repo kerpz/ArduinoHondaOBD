@@ -134,7 +134,7 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
   return 1; // success
 }
 
-unsigned int readVoltage(void) {
+unsigned int readVoltageDivider(int pin) {
   // Read 1.1V reference against AVcc
   // set the reference to Vcc and the measurement to the internal 1.1V reference
   #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
@@ -164,30 +164,35 @@ unsigned int readVoltage(void) {
   float R2 = 220000.0; // Resistance of R2 (220kohms)
   //unsigned int volt2 = (((analogRead(14) * vcc) / 1024.0) / (R2/(R1+R2))) * 10.0; // convertion & voltage divider
   //temp = ((analogRead(pinTemp) * vcc) / 1024.0) * 100.0; // LM35 celcius
-  return (((analogRead(14) * vcc) / 1024.0) / (R2/(R1+R2))) * 10.0; // convertion & voltage divider
+  return (((analogRead(pin) * vcc) / 1024.0) / (R2/(R1+R2))) * 10.0; // convertion & voltage divider
 }
 
-void lcdZeroPaddedPrint(unsigned long i, byte len, bool decimal = false) {
-  switch (len)
-  {
-    case 6:
-      lcd.print(i/100000);
-      i %= 100000;
-    case 5:
-      lcd.print(i/10000);
-      i %= 10000;
-    case 4:
-      lcd.print(i/1000);
-      i %= 1000;
-    case 3:
-      lcd.print(i/100);
-      i %= 100;
-    case 2:
-      lcd.print(i/10);
-      i %= 10;
-      if (decimal) lcd.print(".");
-    default:
-      lcd.print(i);
+void lcdZeroPaddedPrint(long i, byte len, bool decimal = false) {
+  if (i < 0) { // negative values
+    lcd.print(i);
+  }
+  else {
+    switch (len)
+    {
+      case 6:
+        lcd.print(i/100000);
+        i %= 100000;
+      case 5:
+        lcd.print(i/10000);
+        i %= 10000;
+      case 4:
+        lcd.print(i/1000);
+        i %= 1000;
+      case 3:
+        lcd.print(i/100);
+        i %= 100;
+      case 2:
+        lcd.print(i/10);
+        i %= 10;
+        if (decimal) lcd.print(".");
+      default:
+        lcd.print(i);
+    }
   }
 }
 
@@ -266,7 +271,7 @@ void procbtSerial(void) {
         else if (!strcmp(btdata1, "ATRV")) { // read voltage in float / volts
           //btSerial.print("12.0V\r\n>");
           byte v1 = 0, v2 = 0, v3 = 0;
-          unsigned int volt2 = readVoltage();
+          unsigned int volt2 = readVoltageDivider(14);
           v1 = volt2 / 10;
           volt2 %= 10;
           v2 = volt2;
@@ -456,8 +461,8 @@ void procbtSerial(void) {
         }
         
         // direct honda PID access
-        // 1 byte access (20AA) // 20 = 1 byte, AA = address
-        else if (btdata1[0] == '2' && btdata1[1] == '0') {
+        // 1 byte access (21AA) // 21 = 1 byte, AA = address
+        else if (btdata1[0] == '2' && btdata1[1] == '1') {
           byte addr = ((btdata1[2] > '9')? (btdata1[2] &~ 0x20) - 'A' + 10: (btdata1[2] - '0') * 16) +
                       ((btdata1[3] > '9')? (btdata1[3] &~ 0x20) - 'A' + 10: (btdata1[3] - '0'));
           if (dlcCommand(0x20, 0x05, addr, 0x01, dlcdata)) {
@@ -517,6 +522,9 @@ void procdlcSerial(void) {
       if (obd_select == 1) rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
       if (obd_select == 2) rpm = (data[2] * 256 + data[3]) / 4; // OBD2
       vss = data[4];
+
+      // in odb1 rpm is -1
+      if (rpm < 0) { rpm = 0; }
     }
     
     if (dlcCommand(0x20,0x05,0x10,0x10,data)) { // row2
@@ -578,7 +586,7 @@ void procdlcSerial(void) {
     // ve = 75, ed = 1.5.95, afr = 14.7
     maf = (imap / 120) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
   
-    volt2 = readVoltage();
+    volt2 = readVoltageDivider(14);
 
     //lcd.clear();
     
@@ -624,21 +632,17 @@ void procdlcSerial(void) {
     }
     else if (pag_select == 1) {
       // display 2 // trip computer
-      // S000 000 000 E00
+      // S000  A000  T000
       // 00:00:00 D000000
       lcd.setCursor(0,0);
     
       lcd.print("S");
       lcdZeroPaddedPrint(vss, 3);
-      lcd.print(" ");
+      lcd.print("  A");
       lcdZeroPaddedPrint(vssavg, 3);
-      lcd.print(" ");
+      lcd.print("  T");
       lcdZeroPaddedPrint(vsstop, 3);
-      lcd.print(" ");
-    
-      lcd.print("E");
-      lcdZeroPaddedPrint(ect, 2);
-    
+
       lcd.setCursor(0,1);
     
       unsigned long total_time = (idle_time + running_time) / 4; // running time in second @ 250ms
@@ -780,6 +784,25 @@ void procButtons() {
     }
     button_press_old = button_press_new;
   }
+
+  if (button_press_new == LOW) { // while pressed
+      if (millis() - buttonsTick == 5) { // beep @ 5 ms
+        beep(50);
+      }
+      else if (millis() - buttonsTick == 3000) { // beep @  3 secs
+        beep(50);
+      }
+      else if (millis() - buttonsTick == 5000) { // beep @  5 secs
+        beep(50);
+      }
+  }
+}
+
+void beep(unsigned char delayms)
+{
+  digitalWrite(13, HIGH);
+  delay(delayms);
+  digitalWrite(13, LOW);
 }
 
 void setup()
@@ -799,12 +822,10 @@ void setup()
 
   // initial beep
   for (int i=0; i<3; i++) {
-    digitalWrite(13, HIGH);
-    delay(50);
-    digitalWrite(13, LOW);
+    beep(50);
     delay(80);
   }
-  
+
   if (EEPROM.read(0) == 0xff) { EEPROM.write(0, obd_select); }
   if (EEPROM.read(1) == 0xff) { EEPROM.write(0, pag_select); }
   //if (EEPROM.read(2) == 0xff) { EEPROM.write(0, ect_alarm); }
