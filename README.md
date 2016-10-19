@@ -85,11 +85,14 @@ Screenshots (Andorid App TORQUE)
 ![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/TORQUE_04.png "TORQUE Screenshot 04")
 ![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/TORQUE_03.png "TORQUE Screenshot 03")
 
+NOTES
+-----
+* Added button for page change (5ms) and ecu mode change (3secs).
+* Added Fault codes reader @ lcd page 3
+* Added 128x64 LCD @ SPI support
+* Added 20x4 LDC @ I2C support
+* Added smart keyless entry via smart phone
+
 TODO
 -----
-* ECU detection (Obd1 or Obd2) (How?)
-* Fault codes reader (Work on progress)
-* Navigation buttons using Analog input (up,down,left,right,select/enter) (DFRobot style)
-* Add 128x64 LCD @ SPI support
-* Add 20x4 LDC @ I2C support
-* Integrate smart keyless entry via smart phone (Optional)
+* Update torque anage pid image
