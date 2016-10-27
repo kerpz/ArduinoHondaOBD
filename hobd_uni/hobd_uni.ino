@@ -23,7 +23,31 @@
 //#define PCINT3_vect FALSE
 
 #include <EEPROM.h>
+
+
+/* LCD in Parallel mode
+ * RS pin      9
+ * En pin      8
+ * D4 pin      7
+ * D5 pin      6
+ * D6 pin      5
+ * D7 pin      4
+ * RW pin      Gnd
+ * 10K potentiometer:
+ * Ends to 5V and ground
+ * VO pin at middle
+*/
+
+#define LCD_i2c FALSE
+
+#if defined(LCD_i2c)
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x3f, 2, 1, 0, 4, 5, 6, 7);
+#else
 #include <LiquidCrystal.h>
+LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
+#endif
+
 #include <SoftwareSerialWithHalfDuplex.h>
 
 
@@ -49,21 +73,6 @@
  * 18 = Door Unlock
  * 19 = Navigation Button(s)
 */
-
-/* LCD Pins
- * 
- * LCD RS pin      9
- * LCD Enable pin  8
- * LCD D4 pin      7
- * LCD D5 pin      6
- * LCD D6 pin      5
- * LCD D7 pin      4
- * LCD R/W pin to ground
- * 10K potentiometer:
- * ends to +5V and ground
- * wiper to LCD VO pin (pin 3)
-*/
-LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 
 SoftwareSerialWithHalfDuplex btSerial(10, 11); // RX, TX
 SoftwareSerialWithHalfDuplex dlcSerial(12, 12, false, false);
@@ -574,10 +583,6 @@ void procdlcSerial(void) {
     if (ect > ect_alarm || vss > vss_alarm) { digitalWrite(13, HIGH); }
     else { digitalWrite(13, LOW); }
   
-    // tps offset, fix haxx
-    //if (tps < 0) { tps = 0; }
-    //if (tps > 100) { tps = 100; }
-    
     // IMAP = RPM * MAP / IAT / 2
     // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
     // Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
@@ -838,6 +843,11 @@ void setup()
 
   
   dlcInit();
+
+#if defined(LCD_i2c)
+  lcd.setBacklightPin(3, POSITIVE);
+  lcd.setBacklight(HIGH); // NOTE: You can turn the backlight off by setting it to LOW instead of HIGH
+#endif
 
   lcd.clear();
   lcd.setCursor(0, 0);
