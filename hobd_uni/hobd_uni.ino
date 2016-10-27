@@ -823,6 +823,11 @@ void setup()
   btSerial.begin(9600);
   dlcSerial.begin(9600);
 
+#if defined(LCD_i2c)
+  lcd.setBacklightPin(3, POSITIVE);
+  lcd.setBacklight(HIGH); // NOTE: You can turn the backlight off by setting it to LOW instead of HIGH
+#endif
+
   lcd.begin(0, 2); // sets the LCD's rows and colums:
 
   // initial beep
@@ -843,11 +848,6 @@ void setup()
 
   
   dlcInit();
-
-#if defined(LCD_i2c)
-  lcd.setBacklightPin(3, POSITIVE);
-  lcd.setBacklight(HIGH); // NOTE: You can turn the backlight off by setting it to LOW instead of HIGH
-#endif
 
   lcd.clear();
   lcd.setCursor(0, 0);
