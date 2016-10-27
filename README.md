@@ -39,6 +39,20 @@ Wiring for hobd_uni (Joined ELM and LCD codes)
     D5 ---------------------- Pin6
     D6 ---------------------- Pin5
     D7 ---------------------- Pin4
+    VO ---------------------- 10k Potentiometer (+5V to Gnd)
+
+    Piezo Buzzer              Arduino Uno               
+    (+) --------------------- Pin13
+    (-) --------------------- Gnd
+
+    Tact Switch               Arduino Uno               
+    (+) --------------------- Pin19 (A5)
+    (-) --------------------- Gnd
+
+    Voltage Divider           Arduino Uno               
+    +12V divider circuit ---- Pin14 (A0)
+    (680k ohms and 220k ohms)
+    
 
 ![Alt text](https://raw.github.com/kerpz/ArduinoHondaOBD/master/images/UNI_wiring.png "UNI Wiring Image")
 
@@ -89,11 +103,11 @@ NOTES
 -----
 * Added button for page change (5ms) and ecu mode change (3secs).
 * Added Fault codes reader @ lcd page 3
-* Added 128x64 LCD @ SPI support
-* Added 20x4 LDC @ I2C support
+* Added LCD @ I2C support
 * Added smart keyless entry via smart phone
 * Tested on P2T ODB2 stock and P30 ODB1 chipped
 
 TODO
 -----
-* Update torque anage pid image
+* Add 128x64 LCD @ SPI support
+* Add 20x4 LCD @ I2C support
