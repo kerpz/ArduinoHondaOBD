@@ -1,14 +1,20 @@
 /*
  Author:
  - Philip Bordado (kerpz@yahoo.com)
+
  Hardware:
- - HC-05 Bluetooth module at pin 10 (Rx) pin 11 (Tx) 
- - DLC(K-line) at pin 12
- - Voltage divider @ 12v Car to pin A0 (680k ohms and 220k ohms)
+ - Arduino UNO (Compatible board)
+ - HC-05 Bluetooth module
+ - Resistors 680k ohms and 220k ohms
+ - Tact switch
+ - Piezo Buzzer
+ - LCD 16x2 and 10k Potentiometer
+ 
  Software:
- - Arduino 1.0.5
- - SoftwareSerialWithHalfDuplex
+ - Arduino 1.6.9
+ - SoftwareSerialWithHalfDuplex (Library)
    https://github.com/nickstedman/SoftwareSerialWithHalfDuplex
+ - LiquidCrystal (Library)
    
  Formula:
  - IMAP = RPM * MAP / IAT / 2
@@ -16,29 +22,41 @@
    Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
    http://www.lightner.net/obd2guru/IMAP_AFcalc.html
    http://www.installuniversity.com/install_university/installu_articles/volumetric_efficiency/ve_computation_9.012000.htm
+
+ Arduino Pin Mapping:
+
+ - 00 = Serial RX
+ - 01 = Serial TX
+ - 02 = Injector Input
+ - 03 = Injector Input
+ - 04 = LCD D7
+ - 05 = LCD D6
+ - 06 = LCD D5
+ - 07 = LCD D4
+ - 08 = LCD EN
+ - 09 = LCD RS
+ - 10 = Bluetooth RX
+ - 11 = Bluetooth TX
+ - 12 = K-Line
+ - 13 = Piezo buzzer (+)
+
+ - 14 = (A0) Voltage divider (Input Signal)
+ - 15 = (A1) VSS (Input Signal)
+ - 16 = (A2) Door Status (Input Signal)
+ - 17 = (A3) Navigation Button
+ - 18 = (A4) I2C
+ - 19 = (A5) I2C
+
+ Potentiometer
+ - END = 5V
+ - MID = LCD VO
+ - END = GND
+  
 */
-//#define PCINT0_vect FALSE
-//#define PCINT1_vect FALSE
-//#define PCINT2_vect FALSE
-//#define PCINT3_vect FALSE
 
 #include <EEPROM.h>
 
-
-/* LCD in Parallel mode
- * RS pin      9
- * En pin      8
- * D4 pin      7
- * D5 pin      6
- * D6 pin      5
- * D7 pin      4
- * RW pin      Gnd
- * 10K potentiometer:
- * Ends to 5V and ground
- * VO pin at middle
-*/
-
-#define LCD_i2c FALSE
+#define LCD_i2c FALSE // Using LCD 16x2 Parallel mode
 
 #if defined(LCD_i2c)
 #include <LiquidCrystal_I2C.h>
@@ -48,34 +66,16 @@ LiquidCrystal_I2C lcd(0x3f, 2, 1, 0, 4, 5, 6, 7);
 LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 #endif
 
+//#define PCINT0_vect FALSE // D8 - D13
+#define PCINT1_vect FALSE // A0 - A5
+//#define PCINT2_vect FALSE // D0 - D7
+//#define PCINT3_vect FALSE
+
 #include <SoftwareSerialWithHalfDuplex.h>
-
-
-// input signals: ign, door
-// output signals: alarm horn, lock door, unlock door, immobilizer
-/*
- * 
- * Digital Pins
- * 00 = Serial
- * 01 = Serial
- * 02 = Injector Input
- * 03 = Injector Input
- * 10 = Bluetooth
- * 11 = Bluetooth
- * 12 = K-Line
- * 13 = Piezo buzzer / LED light
- * 
- * Analog pins
- * 14 = Voltage divider (Input Signal)
- * 15 = VSS (Input Signal)
- * 16 = Door Status (Input Signal)
- * 17 = Door Lock 
- * 18 = Door Unlock
- * 19 = Navigation Button(s)
-*/
 
 SoftwareSerialWithHalfDuplex btSerial(10, 11); // RX, TX
 SoftwareSerialWithHalfDuplex dlcSerial(12, 12, false, false);
+
 
 bool elm_mode = false;
 bool elm_memory = false;
@@ -297,24 +297,24 @@ void procbtSerial(void) {
         else if (!strcmp(btdata1, "ATDHP")) { // display hobd protocol
           sprintf_P(btdata2, PSTR("HOBD%d\r\n>"), obd_select);
         }
-        else if (strstr(btdata1, "AT13")) { // pin 13 test  // T = toggle, 1 = on, 0 = off
-          if (btdata1[4] == 'T') { pin_13 = !pin_13; }
-          else { pin_13 = btdata1[4]; }
+        else if (strstr(btdata1, "ATSAP")) { // set arduino pin value (1=hi,0=lo,T=toggle)
+          byte pin = ((btdata1[5] > '9')? (btdata1[5] &~ 0x20) - 'A' + 10: (btdata1[5] - '0') * 16) +
+                      ((btdata1[6] > '9')? (btdata1[6] &~ 0x20) - 'A' + 10: (btdata1[6] - '0'));
+          if (btdata1[7] == 'T') { digitalWrite(pin, !digitalRead(pin)); }
+          else { digitalWrite(pin, btdata1[7]); }
           
-          if (pin_13 == false) { digitalWrite(13, LOW); }
-          else if (pin_13 == true) { digitalWrite(13, HIGH); }
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (strstr(btdata1, "AT17")) { // door lock signal @ pin 17
-          digitalWrite(17, HIGH);
-          delay(1000);
-          digitalWrite(17, LOW);
-          sprintf_P(btdata2, PSTR("OK\r\n>"));
+        else if (strstr(btdata1, "ATDAP")) { // display arduino pin value (1=hi,0=lo)
+          byte pin = ((btdata1[5] > '9')? (btdata1[5] &~ 0x20) - 'A' + 10: (btdata1[5] - '0') * 16) +
+                      ((btdata1[6] > '9')? (btdata1[6] &~ 0x20) - 'A' + 10: (btdata1[6] - '0'));
+          sprintf_P(btdata2, PSTR("%d\r\n>"), digitalRead(pin));
         }
-        else if (strstr(btdata1, "AT18")) { // door unlock signal @ pin 18
-          digitalWrite(18, HIGH);
-          delay(1000);
-          digitalWrite(18, LOW);
+        else if (strstr(btdata1, "ATPAP")) { // push arduino pin high for 1sec // used for locking/unlocking door
+          byte pin = ((btdata1[5] > '9')? (btdata1[5] &~ 0x20) - 'A' + 10: (btdata1[5] - '0') * 16) +
+                      ((btdata1[6] > '9')? (btdata1[6] &~ 0x20) - 'A' + 10: (btdata1[6] - '0'));
+          pushPinHi(pin, 1000);
+
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         
@@ -390,15 +390,12 @@ void procbtSerial(void) {
         }
         else if (!strcmp(btdata1, "010C")) { // rpm
           if (dlcCommand(0x20, 0x05, 0x00, 0x02, dlcdata)) {
-            unsigned int u = 0;
-            /*
-            if (obd_select == 1) u = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
-            if (obd_select == 2) u = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
-            u *= 4;
-            */
-            if (obd_select == 1) { u = (1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1)) * 4; } // OBD1
-            if (obd_select == 2) { u = (dlcdata[2] * 256 + dlcdata[3]); } // OBD2
-            sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(u), lowByte(u)); //((A*256)+B)/4
+            int rpm = 0;
+            if (obd_select == 1) { rpm = (1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1)) * 4; } // OBD1
+            if (obd_select == 2) { rpm = (dlcdata[2] * 256 + dlcdata[3]); } // OBD2
+            // in odb1 rpm is -1
+            if (rpm < 0) { rpm = 0; }
+            sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(rpm), lowByte(rpm)); //((A*256)+B)/4
           }
         }
         else if (!strcmp(btdata1, "010D")) { // vss (km/h)
@@ -530,10 +527,10 @@ void procdlcSerial(void) {
     if (dlcCommand(0x20,0x05,0x00,0x10,data)) { // row 1
       if (obd_select == 1) rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
       if (obd_select == 2) rpm = (data[2] * 256 + data[3]) / 4; // OBD2
-      vss = data[4];
-
       // in odb1 rpm is -1
       if (rpm < 0) { rpm = 0; }
+
+      vss = data[4];
     }
     
     if (dlcCommand(0x20,0x05,0x10,0x10,data)) { // row2
@@ -792,34 +789,38 @@ void procButtons() {
 
   if (button_press_new == LOW) { // while pressed
       if (millis() - buttonsTick == 5) { // beep @ 5 ms
-        beep(50);
+        pushPinHi(13, 50); // beep 50ms
       }
       else if (millis() - buttonsTick == 3000) { // beep @  3 secs
-        beep(50);
+        pushPinHi(13, 50); // beep 50ms
       }
       else if (millis() - buttonsTick == 5000) { // beep @  5 secs
-        beep(50);
+        pushPinHi(13, 50); // beep 50ms
       }
   }
 }
 
-void beep(unsigned char delayms)
+
+void pushPinHi(byte pin, unsigned char delayms)
 {
-  digitalWrite(13, HIGH);
+  digitalWrite(pin, HIGH);
   delay(delayms);
-  digitalWrite(13, LOW);
+  digitalWrite(pin, LOW);
 }
 
 void setup()
 {
-  pinMode(13, OUTPUT); // piezo buzzer / LED light
-  pinMode(17, OUTPUT); // door lock
-  pinMode(18, OUTPUT); // door unlock
-
-  pinMode(19, INPUT); // button(s)
-  digitalWrite(19, HIGH); // Configure internal pull-up resistor
+  pinMode(13, OUTPUT); // Piezo Buzzer
   
-  //Serial.begin(115200); // for debugging
+  pinMode(17, INPUT); // Button
+  digitalWrite(17, HIGH); // Configure internal pull-up resistor
+
+  // 18 and 19 used by i2c
+  //pinMode(18, OUTPUT); // Door lock
+  //pinMode(19, OUTPUT); // Door unlock
+
+  
+  //Serial.begin(115200); // For debugging
   btSerial.begin(9600);
   dlcSerial.begin(9600);
 
@@ -828,11 +829,11 @@ void setup()
   lcd.setBacklight(HIGH); // NOTE: You can turn the backlight off by setting it to LOW instead of HIGH
 #endif
 
-  lcd.begin(0, 2); // sets the LCD's rows and colums:
+  lcd.begin(16, 2); // sets the LCD's rows and colums:
 
   // initial beep
   for (int i=0; i<3; i++) {
-    beep(50);
+    pushPinHi(13, 50); // beep 50ms
     delay(80);
   }
 
