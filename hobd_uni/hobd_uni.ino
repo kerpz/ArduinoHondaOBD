@@ -56,7 +56,7 @@
 
 #include <EEPROM.h>
 
-#define LCD_i2c FALSE // Using LCD 16x2 Parallel mode
+//#define LCD_i2c TRUE // Using LCD 16x2 I2C mode
 
 #if defined(LCD_i2c)
 #include <LiquidCrystal_I2C.h>
@@ -66,10 +66,10 @@ LiquidCrystal_I2C lcd(0x3f, 2, 1, 0, 4, 5, 6, 7);
 LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 #endif
 
-//#define PCINT0_vect FALSE // D8 - D13
-#define PCINT1_vect FALSE // A0 - A5
-//#define PCINT2_vect FALSE // D0 - D7
-//#define PCINT3_vect FALSE
+// PCINT0_vect  // D8 - D13
+// PCINT1_vect  // A0 - A5
+// PCINT2_vect  // D0 - D7
+// PCINT3_vect 
 
 #include <SoftwareSerialWithHalfDuplex.h>
 
@@ -90,9 +90,6 @@ byte pag_select = 0; // lcd page
 
 byte ect_alarm = 98; // celcius
 byte vss_alarm = 100; // kph
-
-bool pin_13 = false;
-
 
 void bt_write(char *str) {
   while (*str != '\0')
@@ -224,7 +221,7 @@ void lcdSecondsToTimePrint(unsigned long i) {
   lcdZeroPaddedPrint(numberOfSeconds(i), 2);
 }
 
-void procbtSerial(void) {
+void procbtSerial() {
   //static unsigned long msTick = millis();
   
   //if (millis() - msTick >= 250) { // run every 250 ms
@@ -507,7 +504,7 @@ void procbtSerial(void) {
   //}
 }  
 
-void procdlcSerial(void) {
+void procdlcSerial() {
   static unsigned long msTick = millis();
 
   if (millis() - msTick >= 250) { // run every 250 ms
@@ -757,7 +754,7 @@ void procButtons() {
   static unsigned long buttonsTick = 0;
   static int button_press_old = HIGH;
 
-  int button_press_new = digitalRead(19);
+  int button_press_new = digitalRead(17);
 
   if (button_press_new != button_press_old) { // change state
     if (button_press_new == HIGH) { // on released
@@ -799,7 +796,6 @@ void procButtons() {
       }
   }
 }
-
 
 void pushPinHi(byte pin, unsigned char delayms)
 {
