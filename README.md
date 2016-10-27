@@ -15,10 +15,10 @@ Supports
 
 Files
 -----
-* hobd_uni - implements Honda OBD with ELM OBD2 protocol (bluetooth) and LCD display
-* hobd_elm - implements Honda OBD to ELM OBD2 protocol (bluetooth)
-* hobd_lcd - implements Honda OBD to LCD display
-* LCD_wiring.png - LCD wiring for arduino uno (10k potentiometer)
+* hobd_uni - unified code for ELM bluetooth and LCD display with other improvements.
+* hobd_elm - implements Honda OBD to ELM OBD2 protocol (bluetooth) - not updated
+* hobd_lcd - implements Honda OBD to LCD display - not updated
+* UNI_wiring.png - Unified wiring diagram for arduino UNO (compatible)
 
 
 Wiring for hobd_uni (Joined ELM and LCD codes)
@@ -46,7 +46,7 @@ Wiring for hobd_uni (Joined ELM and LCD codes)
     (-) --------------------- Gnd
 
     Tact Switch               Arduino Uno               
-    (+) --------------------- Pin19 (A5)
+    (+) --------------------- Pin17 (A3)
     (-) --------------------- Gnd
 
     Voltage Divider           Arduino Uno               
@@ -75,13 +75,14 @@ Wiring for hobd_lcd (Deprecated use hobd_uni)
     +12 --------------------- Vin
     K-line ------------------ Pin12
 
-    LCD 2x16                  Arduino Uno               
+    LCD 16x2                  Arduino Uno               
     RS ---------------------- Pin9
     Enable ------------------ Pin8
     D4 ---------------------- Pin7
     D5 ---------------------- Pin6
     D6 ---------------------- Pin5
     D7 ---------------------- Pin4
+    VO ---------------------- 10k Potentiometer (+5V to Gnd)
 
 
 Screenshots (LCD 16x2)
