@@ -102,10 +102,18 @@ Screenshots (Andorid App TORQUE)
 
 NOTES
 -----
-* Added button for page change (5ms) and ecu mode change (3secs).
+* Added button for changing page (5ms) and changing ecu mode (3s).
 * Added Fault codes reader @ lcd page 3
 * Added LCD @ I2C support
-* Added smart keyless entry via smart phone
+  - #define LCD_i2c TRUE // Using LCD 16x2 I2C mode
+* Added direct HOBD access API (ELM mode) used for undefined PIDs on OBD2
+  - // direct honda PID access
+  - // 1 byte access (21AA) // 21 = 1 byte, AA = address
+  - // 2 bytes access (22AA) // 22 = 2 bytes, AA = address
+  - // 4 byte access (24AA) // 24 = 4 bytes, AA = address
+* Added direct Arduino Pin access API (ELM mode) used for keyless entry and other stuff
+  - // set arduino pin (ATSAPNNX) // NN = pin, X = value (value is 1 or 0)
+  - // get arduino pin (ATDAPNN) // NN = pin
 * Tested on P2T ODB2 stock and P30 ODB1 chipped
 
 TODO
