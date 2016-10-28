@@ -66,6 +66,8 @@ LiquidCrystal_I2C lcd(0x3f, 2, 1, 0, 4, 5, 6, 7);
 LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 #endif
 
+// comment the PCINT1_vect,PCINT2_vect,PCINT3_vect handle in softserial library
+// since we are just using D10,D11,D12 and we want to handle interrupts @ A0 - A5
 // PCINT0_vect  // D8 - D13
 // PCINT1_vect  // A0 - A5
 // PCINT2_vect  // D0 - D7
