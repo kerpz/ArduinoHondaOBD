@@ -176,31 +176,30 @@ unsigned int readVoltageDivider(int pin) {
 }
 
 void lcdZeroPaddedPrint(long i, byte len, bool decimal = false) {
-  if (i < 0) { // negative values
-    lcd.print(i);
+  if (i < 0) { // negate value
+    i = i * -1;
   }
-  else {
-    switch (len)
-    {
-      case 6:
-        lcd.print(i/100000);
-        i %= 100000;
-      case 5:
-        lcd.print(i/10000);
-        i %= 10000;
-      case 4:
-        lcd.print(i/1000);
-        i %= 1000;
-      case 3:
-        lcd.print(i/100);
-        i %= 100;
-      case 2:
-        lcd.print(i/10);
-        i %= 10;
-        if (decimal) lcd.print(".");
-      default:
-        lcd.print(i);
-    }
+
+  switch (len)
+  {
+    case 6:
+      lcd.print(i/100000);
+      i %= 100000;
+    case 5:
+      lcd.print(i/10000);
+      i %= 10000;
+    case 4:
+      lcd.print(i/1000);
+      i %= 1000;
+    case 3:
+      lcd.print(i/100);
+      i %= 100;
+    case 2:
+      lcd.print(i/10);
+      i %= 10;
+      if (decimal) lcd.print(".");
+    default:
+      lcd.print(i);
   }
 }
 
@@ -418,7 +417,7 @@ void procbtSerial() {
         else if (!strcmp(btdata1, "0111")) { // tps (%)
           if (dlcCommand(0x20, 0x05, 0x14, 0x01, dlcdata)) {
             int i = (dlcdata[2] - 24) / 2;
-            if (i < 0) i = 0; // haxx
+            //if (i < 0) i = 0; // haxx
             sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), i);
           }
         }
@@ -430,18 +429,15 @@ void procbtSerial() {
             sprintf_P(btdata2, PSTR("41 14 %02X FF\r\n>"), dlcdata[2]);
           }
         }
-        else if (!strcmp(btdata1, "011C")) { // obd2
-          sprintf_P(btdata2, PSTR("41 1C 01\r\n>"));
+        else if (!strcmp(btdata1, "011C")) {
+          sprintf_P(btdata2, PSTR("41 1C 01\r\n>")); // obd2
         }
         else if (!strcmp(btdata1, "0120")) {
-          sprintf_P(btdata2, PSTR("41 20 00 00 00 01\r\n>"));
+          sprintf_P(btdata2, PSTR("41 20 00 00 20 01\r\n>")); // pid 33 and 40
         }
         //else if (!strcmp(btdata1, "012F")) { // fuel level (%)
         //  sprintf_P(btdata2, PSTR("41 2F FF\r\n>")); // max
         //}
-        else if (!strcmp(btdata1, "0130")) {
-          sprintf_P(btdata2, PSTR("41 30 20 00 00 01\r\n>"));
-        }
         else if (!strcmp(btdata1, "0133")) { // baro (kPa)
           if (dlcCommand(0x20, 0x05, 0x13, 0x01, dlcdata)) {
             int i = dlcdata[2] * 0.716 - 5; // 101 kPa
@@ -449,7 +445,7 @@ void procbtSerial() {
           }
         }
         else if (!strcmp(btdata1, "0140")) {
-          sprintf_P(btdata2, PSTR("41 40 48 00 00 00\r\n>"));
+          sprintf_P(btdata2, PSTR("41 40 48 00 00 00\r\n>")); // pid 42 and 45
         }
         else if (!strcmp(btdata1, "0142")) { // ecu voltage (V)
           if (dlcCommand(0x20, 0x05, 0x17, 0x01, dlcdata)) {
@@ -518,7 +514,7 @@ void procdlcSerial() {
     //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
     //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
     byte data[20];
-    int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,volt=0,volt2=0,imap=0;
+    int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,afr=0,volt=0,volt2=0,imap=0, sft=0,lft=0,inj=0,ign=0,lmt=0,iac=0, knoc=0;
   
     static unsigned long vsssum=0,running_time=0,idle_time=0,distance=0;
     static byte vss=0,vsstop=0,vssavg=0;
@@ -543,11 +539,40 @@ void procdlcSerial() {
       maps = data[4] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
       //baro = data[5] * 0.716 - 5;
       tps = (data[6] - 24) / 2;
+
+      f = data[7];
+      f = f / 51.3;
+      afr = f; // 0 to 1 / stock sensor
+
       f = data[9];
       f = (f / 10.45) * 10.0; // cV
       volt = round(f);
       //alt_fr = data[10] / 2.55
       //eld = 77.06 - data[11] / 2.5371
+    }
+
+    if (dlcCommand(0x20,0x05,0x20,0x10,data)) { // row3
+      float f;
+      sft = (data[2] / 128 - 1) * 100; // -30 to 30
+      lft = (data[3] / 128 - 1) * 100; // -30 to 30
+      inj = (data[6] * 256 + data[7]) / 250; // 0 to 16
+      
+      //ign = (data[8] - 128) / 2;
+      f = data[8];
+      f = f / 2.845 - 9.83;
+      ign = round(f); // -10 to 50
+      
+      //lmt = (data[9] - 128) / 2;
+      f = data[9];
+      f = (f - 24) / 4;
+      lmt = round(f);
+      
+      iac = data[10] / 2.55;
+    }
+  
+    if (dlcCommand(0x20,0x05,0x30,0x10,data)) { // row4
+      // data[7] to data[12] unknown
+      knoc = data[14] / 51; // 0 to 5
     }
   
     if (vss > vsstop) { // top speed
@@ -560,14 +585,18 @@ void procdlcSerial() {
           vsssum += vss;
           vssavg = (vsssum / running_time);
     
-          float d;
-          d = vssavg;
-          d = ((d * 1000) / 14400) * running_time; // @ 250ms
-          distance = round(d);
-          //d = vss; // instant distance
-          //d = (d * 1000) / 14400; // @ 250ms
-          //distance += round(d);
-      
+          float f;
+          //f = vssavg;
+          //f = ((f * 1000) / 14400) * running_time; // @ 250ms
+          //distance = round(f);
+          
+          // formula: distance = speed * fps / 3600
+          // where: distance = kilometer(s), speed = km/h, fps in second(s)
+          f = vss;
+          f = f * 0.25 / 3600; // @ 250ms / km
+          f = f * 1000; // km to meters
+          distance = distance + round(f);
+          
           // time = distance / speed
       }
       else { // idle time
@@ -584,7 +613,7 @@ void procdlcSerial() {
     // Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
     float maf = 0.0;
     imap = (rpm * maps) / (iat + 273);
-    // ve = 75, ed = 1.5.95, afr = 14.7
+    // ve = 75, ed = 1.595, afr = 14.7
     maf = (imap / 120) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
   
     volt2 = readVoltageDivider(14);
@@ -632,8 +661,47 @@ void procdlcSerial() {
       lcdZeroPaddedPrint(tps, 2);
     }
     else if (pag_select == 1) {
-      // display 2 // trip computer
+      // display 2
+      // IG+15 LM-21 A0.0
+      // INJ00 IAC00 KNC0
+      // RPM0000   SPD000
+      // ECT000    IAT000
+      // MAP000    TPS000
+      //lcd.setCursor(0,0);
+      //lcd.print("                ");
+    
+      lcd.setCursor(0,0);
+      lcd.print("IG");
+      if (ign < 0) { lcd.print("-"); }
+      else { lcd.print("+"); }
+      //lcd.print(ign);
+      lcdZeroPaddedPrint(ign, 2);
+      
+      lcd.print(" LM");
+      if (ign < 0) { lcd.print("-"); }
+      else { lcd.print("+"); }
+      //lcd.print(lmt);
+      lcdZeroPaddedPrint(lmt, 2);
+
+      lcd.print(" A");
+      afr = round(afr * 10) / 10.0;
+      lcdZeroPaddedPrint(afr, 2, true);
+
+      lcd.setCursor(0,1);
+
+      lcd.print("INJ");
+      lcdZeroPaddedPrint(inj, 2);
+
+      lcd.print(" IAC");
+      lcdZeroPaddedPrint(iac, 2);
+
+      lcd.print(" KNC");
+      lcdZeroPaddedPrint(knoc, 1);
+    }
+    else if (pag_select == 2) {
+      // display 3 // trip computer
       // S000  A000  T000
+      // T00:00:00 D000.0
       // 00:00:00 D000000
       lcd.setCursor(0,0);
     
@@ -647,13 +715,15 @@ void procdlcSerial() {
       lcd.setCursor(0,1);
     
       unsigned long total_time = (idle_time + running_time) / 4; // running time in second @ 250ms
+      lcd.print("T");
       lcdSecondsToTimePrint(total_time);
-      lcd.print(" ");
     
-      lcd.print("D");
-      lcdZeroPaddedPrint(distance, 6);
+      lcd.print(" D");
+      unsigned int total_distance = distance / 100; // in 000.0km format
+      lcdZeroPaddedPrint(total_distance, 4, true);
     }
-    else if (pag_select == 2) {
+    else if (pag_select == 3) {
+      // display 3 // CEL/MIL codes
       byte errnum, errcnt = 0, i;
 
       //byte hbits = i >> 4;
@@ -773,10 +843,10 @@ void procButtons() {
       }
       else if (millis() - buttonsTick >= 5) { // short press 5 ms
         pag_select++;
-        if (pag_select > 2) {
+        if (pag_select > 3) {
           pag_select = 0;
         }
-        EEPROM.write(1, pag_select);
+        //EEPROM.write(1, pag_select);
       }
       buttonsTick = 0; // reset timer
     }
@@ -836,12 +906,12 @@ void setup()
   }
 
   if (EEPROM.read(0) == 0xff) { EEPROM.write(0, obd_select); }
-  if (EEPROM.read(1) == 0xff) { EEPROM.write(0, pag_select); }
+  //if (EEPROM.read(1) == 0xff) { EEPROM.write(0, pag_select); }
   //if (EEPROM.read(2) == 0xff) { EEPROM.write(0, ect_alarm); }
   //if (EEPROM.read(3) == 0xff) { EEPROM.write(0, vss_alarm); }
   
   obd_select = EEPROM.read(0);
-  pag_select = EEPROM.read(1);
+  //pag_select = EEPROM.read(1);
   //ect_alarm = EEPROM.read(2); // over heat ???
   //vss_alarm = EEPROM.read(3); // over speed ???
 
