@@ -7,6 +7,13 @@ and a LCD (2x6) to display it on my car's dashboard.
 
 Please refer to the screenshots below.
 
+Applications
+--------
+* Datalogging
+* Diagnostics
+* Trip Computer
+* Etc
+
 
 Supports
 --------
