@@ -87,11 +87,29 @@ bool elm_linefeed = false;
 bool elm_header = false;
 int  elm_protocol = 0; // auto
 
-byte obd_select = 2; // 0 = obd0, 1 = obd1, 2 = obd2
+byte obd_select = 2; // 1 = obd1, 2 = obd2
 byte pag_select = 0; // lcd page
 
 byte ect_alarm = 98; // celcius
 byte vss_alarm = 100; // kph
+
+//unsigned long error_timeout = 0, error_checksum = 0;
+
+void serial_debug(byte data[]) {
+  // debug
+  int i;
+  for (i=0; i<20; i++) {
+    if (data[i] < 16) {
+      Serial.print("0");
+      Serial.print(data[i], HEX);
+    }
+    else {
+      Serial.print(data[i], HEX);
+    }
+    Serial.print(" ");
+  }
+  Serial.println();
+}
 
 void bt_write(char *str) {
   while (*str != '\0')
@@ -133,11 +151,20 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
       i++;
     }
   }
-  if (data[0] != 0x00 && data[1] != (len+3)) { // or use checksum?
-    return 0; // error
-  }
+
   if (i < (len+3)) { // timeout
-    return 0; // error
+    //error_timeout++;
+    return 0;  // data error
+  }
+  // checksum
+  crc = 0;
+  for (i=0; i<len+2; i++) {
+    crc = crc + data[i];
+  }
+  crc = 0xFF - (crc - 1);
+  if (crc != data[len+2]) { // checksum failed
+    //error_checksum++;
+    return 0; // data error
   }
   return 1; // success
 }
@@ -514,12 +541,14 @@ void procdlcSerial() {
     //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
     //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
     byte data[20];
-    int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,afr=0,volt=0,volt2=0,imap=0, sft=0,lft=0,inj=0,ign=0,lmt=0,iac=0, knoc=0;
+    static int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,afr=0,volt=0,volt2=0,imap=0, sft=0,lft=0,inj=0,ign=0,lmt=0,iac=0, knoc=0;
   
     static unsigned long vsssum=0,running_time=0,idle_time=0,distance=0;
     static byte vss=0,vsstop=0,vssavg=0;
   
+    memset(data, 0, 20);
     if (dlcCommand(0x20,0x05,0x00,0x10,data)) { // row 1
+      //serial_debug(data);
       if (obd_select == 1) rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
       if (obd_select == 2) rpm = (data[2] * 256 + data[3]) / 4; // OBD2
       // in odb1 rpm is -1
@@ -528,6 +557,7 @@ void procdlcSerial() {
       vss = data[4];
     }
     
+    memset(data, 0, 20);
     if (dlcCommand(0x20,0x05,0x10,0x10,data)) { // row2
       float f;
       f = data[2];
@@ -551,10 +581,12 @@ void procdlcSerial() {
       //eld = 77.06 - data[11] / 2.5371
     }
 
+    memset(data, 0, 20);
     if (dlcCommand(0x20,0x05,0x20,0x10,data)) { // row3
       float f;
       sft = (data[2] / 128 - 1) * 100; // -30 to 30
       lft = (data[3] / 128 - 1) * 100; // -30 to 30
+      
       inj = (data[6] * 256 + data[7]) / 250; // 0 to 16
       
       //ign = (data[8] - 128) / 2;
@@ -570,6 +602,7 @@ void procdlcSerial() {
       iac = data[10] / 2.55;
     }
   
+    memset(data, 0, 20);
     if (dlcCommand(0x20,0x05,0x30,0x10,data)) { // row4
       // data[7] to data[12] unknown
       knoc = data[14] / 51; // 0 to 5
@@ -735,6 +768,7 @@ void procdlcSerial() {
       // 00 00 00 00 00 
       // 00 00 00 00 00
       lcd.setCursor(0,0);
+      memset(data, 0, 20);
       if (dlcCommand(0x20,0x05,0x40,0x10,data)) { // row 1
         for (i=0; i<14; i++) {
           if (data[i+2] >> 4) {
@@ -763,7 +797,9 @@ void procdlcSerial() {
           }
         }
       }
+      /*
       //lcd.setCursor(0,1);
+      memset(data, 0, 20);
       if (dlcCommand(0x20,0x05,0x50,0x10,data)) { // row 2
         for (i=0; i<16; i++) {
           if (data[i+2] >> 4) {
@@ -790,6 +826,7 @@ void procdlcSerial() {
           }
         }
       }
+      */
       if (errcnt == 0) {
         lcd.print("    NO ERROR    ");
         lcd.setCursor(0,1);
@@ -837,7 +874,7 @@ void procButtons() {
       else if (millis() - buttonsTick >= 3000) { // long press 3 secs
         obd_select++;
         if (obd_select > 2) {
-          obd_select = 0;
+          obd_select = 1;
         }
         EEPROM.write(0, obd_select);
       }
@@ -887,7 +924,6 @@ void setup()
   //pinMode(18, OUTPUT); // Door lock
   //pinMode(19, OUTPUT); // Door unlock
 
-  
   //Serial.begin(115200); // For debugging
   btSerial.begin(9600);
   dlcSerial.begin(9600);
