@@ -447,9 +447,9 @@ void procbtSerial() {
         }
         else if (!strcmp(btdata1, "0111")) { // tps (%)
           if (dlcCommand(0x20, 0x05, 0x14, 0x01, dlcdata)) {
-            int i = (dlcdata[2] - 24) / 2;
+            byte b = (dlcdata[2] - 24) / 2;
             //if (i < 0) i = 0; // haxx
-            sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), i);
+            sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), b);
           }
         }
         else if (!strcmp(btdata1, "0113")) { // o2 sensor present ???
