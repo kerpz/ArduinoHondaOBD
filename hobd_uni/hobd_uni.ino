@@ -304,11 +304,10 @@ void procbtSerial() {
         }
         else if (!strcmp(btdata1, "ATRV")) { // read voltage in float / volts
           //btSerial.print("12.0V\r\n>");
-          byte v1 = 0, v2 = 0, v3 = 0;
-          unsigned int volt2 = readVoltageDivider(14);
+          byte v1 = 0, v2 = 0;
+          unsigned int volt2 = round(readVoltageDivider(14) * 10); // to cV
           v1 = volt2 / 10;
-          volt2 %= 10;
-          v2 = volt2;
+          v2 = volt2 % 10;
           sprintf_P(btdata2, PSTR("%d.%dV\r\n>"), v1, v2);
         }
         // kerpz custom AT cmd
@@ -416,13 +415,10 @@ void procbtSerial() {
         else if (!strcmp(btdata1, "010C")) { // rpm
           if (dlcCommand(0x20, 0x05, 0x00, 0x02, dlcdata)) {
             int rpm = 0;
-            int li = dlcdata[2] * 256 + dlcdata[3]; // little endian 16bit int format?
-            if (li > 0) {
-              if (obd_select == 1) { rpm = (1875000 / li) * 4; } // OBD1
-              if (obd_select == 2) { rpm = li; } // OBD2
-            }
+            if (obd_select == 1) { rpm = (1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1)) * 4; } // OBD1
+            if (obd_select == 2) { rpm = (dlcdata[2] * 256 + dlcdata[3]); } // OBD2
             // in odb1 rpm is -1
-            //if (rpm < 0) { rpm = 0; }
+            if (rpm < 0) { rpm = 0; }
             sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(rpm), lowByte(rpm)); //((A*256)+B)/4
           }
         }
@@ -554,11 +550,11 @@ void procdlcSerial() {
 
     memset(data, 0, 20);
     if (dlcCommand(0x20,0x05,0x00,0x10,data)) { // row 1
-      int li = data[2] * 256 + data[3]; // little endian 16bit int format?
-      if (li > 0) {
-        if (obd_select == 1) rpm = 1875000 / li; // OBD1
-        if (obd_select == 2) rpm = li / 4; // OBD2
-      }
+      if (obd_select == 1) rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
+      if (obd_select == 2) rpm = (data[2] * 256 + data[3]) / 4; // OBD2
+      // in odb1 rpm is -1
+      if (rpm < 0) { rpm = 0; }
+
       vss = data[4];
     }
 
