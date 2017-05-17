@@ -9,7 +9,7 @@
  - Tact switch
  - Piezo Buzzer
  - LCD 16x2 and 10k Potentiometer
- 
+
  Software:
  - Arduino 1.6.9
  - SoftwareSerialWithHalfDuplex (Library)
@@ -51,7 +51,7 @@
  - END = 5V
  - MID = LCD VO
  - END = GND
-  
+
 */
 
 #include <EEPROM.h>
@@ -87,7 +87,7 @@ bool elm_linefeed = false;
 bool elm_header = false;
 int  elm_protocol = 0; // auto
 
-byte obd_select = 2; // 1 = obd1, 2 = obd2
+byte obd_select = 1; // 1 = obd1, 2 = obd2
 byte pag_select = 0; // lcd page
 
 byte ect_alarm = 98; // celcius
@@ -169,7 +169,7 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
   return 1; // success
 }
 
-unsigned int readVoltageDivider(int pin) {
+float readVoltageDivider(int pin) {
   // Read 1.1V reference against AVcc
   // set the reference to Vcc and the measurement to the internal 1.1V reference
   #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
@@ -199,7 +199,7 @@ unsigned int readVoltageDivider(int pin) {
   float R2 = 220000.0; // Resistance of R2 (220kohms)
   //unsigned int volt2 = (((analogRead(14) * vcc) / 1024.0) / (R2/(R1+R2))) * 10.0; // convertion & voltage divider
   //temp = ((analogRead(pinTemp) * vcc) / 1024.0) * 100.0; // LM35 celcius
-  return (((analogRead(pin) * vcc) / 1024.0) / (R2/(R1+R2))) * 10.0; // convertion & voltage divider
+  return ((analogRead(pin) * vcc) / 1024.0) / (R2/(R1+R2)); // convertion & voltage divider // in V
 }
 
 void lcdZeroPaddedPrint(long i, byte len, bool decimal = false) {
@@ -416,10 +416,13 @@ void procbtSerial() {
         else if (!strcmp(btdata1, "010C")) { // rpm
           if (dlcCommand(0x20, 0x05, 0x00, 0x02, dlcdata)) {
             int rpm = 0;
-            if (obd_select == 1) { rpm = (1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1)) * 4; } // OBD1
-            if (obd_select == 2) { rpm = (dlcdata[2] * 256 + dlcdata[3]); } // OBD2
+            int li = dlcdata[2] * 256 + dlcdata[3]; // little endian 16bit int format?
+            if (li > 0) {
+              if (obd_select == 1) { rpm = (1875000 / li) * 4; } // OBD1
+              if (obd_select == 2) { rpm = li; } // OBD2
+            }
             // in odb1 rpm is -1
-            if (rpm < 0) { rpm = 0; }
+            //if (rpm < 0) { rpm = 0; }
             sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(rpm), lowByte(rpm)); //((A*256)+B)/4
           }
         }
@@ -430,7 +433,8 @@ void procbtSerial() {
         }
         else if (!strcmp(btdata1, "010E")) { // timing advance (°)
           if (dlcCommand(0x20, 0x05, 0x26, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("41 0E %02X\r\n>"), dlcdata[2]);
+            byte b = ((dlcdata[2] - 24) / 2) + 128;
+            sprintf_P(btdata2, PSTR("41 0E %02X\r\n>"), b);
           }
         }
         else if (!strcmp(btdata1, "010F")) { // iat (°C)
@@ -542,21 +546,22 @@ void procdlcSerial() {
     //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
     byte data[20];
     static int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,afr=0,volt=0,volt2=0,imap=0, sft=0,lft=0,inj=0,ign=0,lmt=0,iac=0, knoc=0;
-  
+
     static unsigned long vsssum=0,running_time=0,idle_time=0,distance=0;
     static byte vss=0,vsstop=0,vssavg=0;
-  
+
+    volt2 = round(readVoltageDivider(14) * 10); // x10 for display w/ 1 decimal
+
     memset(data, 0, 20);
     if (dlcCommand(0x20,0x05,0x00,0x10,data)) { // row 1
-      //serial_debug(data);
-      if (obd_select == 1) rpm = 1875000 / (data[2] * 256 + data[3] + 1); // OBD1
-      if (obd_select == 2) rpm = (data[2] * 256 + data[3]) / 4; // OBD2
-      // in odb1 rpm is -1
-      if (rpm < 0) { rpm = 0; }
-
+      int li = data[2] * 256 + data[3]; // little endian 16bit int format?
+      if (li > 0) {
+        if (obd_select == 1) rpm = 1875000 / li; // OBD1
+        if (obd_select == 2) rpm = li / 4; // OBD2
+      }
       vss = data[4];
     }
-    
+
     memset(data, 0, 20);
     if (dlcCommand(0x20,0x05,0x10,0x10,data)) { // row2
       float f;
@@ -571,14 +576,19 @@ void procdlcSerial() {
       tps = (data[6] - 24) / 2;
 
       f = data[7];
-      f = f / 51.3;
-      afr = f; // 0 to 1 / stock sensor
+      f = f / 51.3; // o2 volt in V
+      
+      // 0v to 1v / stock sensor
+      // 0v to 5v / AEM UEGO / linear
+      f = (f * 2) + 10; // afr for AEM UEGO
+      afr = round(f * 10); // x10 for display w/ 1 decimal
 
       f = data[9];
-      f = (f / 10.45) * 10.0; // cV
-      volt = round(f);
+      f = f / 10.45; // batt volt in V
+      volt = round(f * 10); // x10 for display w/ 1 decimal
       //alt_fr = data[10] / 2.55
       //eld = 77.06 - data[11] / 2.5371
+
     }
 
     memset(data, 0, 20);
@@ -591,27 +601,36 @@ void procdlcSerial() {
       
       //ign = (data[8] - 128) / 2;
       f = data[8];
-      f = f / 2.845 - 9.83;
-      ign = round(f); // -10 to 50
+      f = (f - 24) / 4;
+      ign = round(f * 10); // x10 for display w/ 1 decimal
       
       //lmt = (data[9] - 128) / 2;
       f = data[9];
       f = (f - 24) / 4;
-      lmt = round(f);
+      lmt = round(f * 10); // x10 for display w/ 1 decimal
       
       iac = data[10] / 2.55;
     }
-  
+
     memset(data, 0, 20);
     if (dlcCommand(0x20,0x05,0x30,0x10,data)) { // row4
       // data[7] to data[12] unknown
       knoc = data[14] / 51; // 0 to 5
     }
-  
+
+    // IMAP = RPM * MAP / IAT / 2
+    // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
+    // Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
+    float maf = 0.0;
+    imap = (rpm * maps) / (iat + 273);
+    // ve = 75, ed = 1.595, afr = 14.7
+    maf = (imap / 120) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
+
+
+    // trip computer essentials
     if (vss > vsstop) { // top speed
       vsstop = vss;
     }
-  
     if (rpm > 0) {
       if (vss > 0) { // running time
           running_time ++;
@@ -636,66 +655,39 @@ void procdlcSerial() {
           idle_time ++;
       }
     }
-  
+
     // critical ect value or speed limit, alarm on
     if (ect > ect_alarm || vss > vss_alarm) { digitalWrite(13, HIGH); }
     else { digitalWrite(13, LOW); }
-  
-    // IMAP = RPM * MAP / IAT / 2
-    // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
-    // Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
-    float maf = 0.0;
-    imap = (rpm * maps) / (iat + 273);
-    // ve = 75, ed = 1.595, afr = 14.7
-    maf = (imap / 120) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
-  
-    volt2 = readVoltageDivider(14);
+
 
     //lcd.clear();
-    
     if (pag_select == 0) {
       // display 1
       // R0000 S000 V00.0
       // E00 I00 M000 T00
     
       lcd.setCursor(0,0);
-    
       lcd.print("R");
       lcdZeroPaddedPrint(rpm, 4);
-    
-      lcd.print(" ");
-      
-      lcd.print("S");
+      lcd.print(" S");
       lcdZeroPaddedPrint(vss, 3);
-    
-      lcd.print(" ");
-      
-      lcd.print("V");
+      lcd.print(" V");
       lcdZeroPaddedPrint(volt2, 3, true);
     
       lcd.setCursor(0,1);
-    
       lcd.print("E");
       lcdZeroPaddedPrint(ect, 2);
-    
-      lcd.print(" ");
-    
-      lcd.print("I");
+      lcd.print(" I");
       lcdZeroPaddedPrint(iat, 2);
-    
-      lcd.print(" ");
-    
-      lcd.print("M");
+      lcd.print(" M");
       lcdZeroPaddedPrint(maps, 3);
-
-      lcd.print(" ");
-    
-      lcd.print("T");
+      lcd.print(" T");
       lcdZeroPaddedPrint(tps, 2);
     }
     else if (pag_select == 1) {
       // display 2
-      // IG+15 LM-21 A0.0
+      // IGN+16.5 AFR14.7
       // INJ00 IAC00 KNC0
       // RPM0000   SPD000
       // ECT000    IAT000
@@ -704,30 +696,19 @@ void procdlcSerial() {
       //lcd.print("                ");
     
       lcd.setCursor(0,0);
-      lcd.print("IG");
+      lcd.print("IGN");
       if (ign < 0) { lcd.print("-"); }
       else { lcd.print("+"); }
       //lcd.print(ign);
-      lcdZeroPaddedPrint(ign, 2);
-      
-      lcd.print(" LM");
-      if (ign < 0) { lcd.print("-"); }
-      else { lcd.print("+"); }
-      //lcd.print(lmt);
-      lcdZeroPaddedPrint(lmt, 2);
-
-      lcd.print(" A");
-      afr = round(afr * 10) / 10.0;
-      lcdZeroPaddedPrint(afr, 2, true);
+      lcdZeroPaddedPrint(ign, 3, true);
+      lcd.print(" AFR");
+      lcdZeroPaddedPrint(afr, 3, true);
 
       lcd.setCursor(0,1);
-
       lcd.print("INJ");
       lcdZeroPaddedPrint(inj, 2);
-
       lcd.print(" IAC");
       lcdZeroPaddedPrint(iac, 2);
-
       lcd.print(" KNC");
       lcdZeroPaddedPrint(knoc, 1);
     }
@@ -736,8 +717,8 @@ void procdlcSerial() {
       // S000  A000  T000
       // T00:00:00 D000.0
       // 00:00:00 D000000
+
       lcd.setCursor(0,0);
-    
       lcd.print("S");
       lcdZeroPaddedPrint(vss, 3);
       lcd.print("  A");
@@ -746,11 +727,9 @@ void procdlcSerial() {
       lcdZeroPaddedPrint(vsstop, 3);
 
       lcd.setCursor(0,1);
-    
       unsigned long total_time = (idle_time + running_time) / 4; // running time in second @ 250ms
       lcd.print("T");
       lcdSecondsToTimePrint(total_time);
-    
       lcd.print(" D");
       unsigned int total_distance = distance / 100; // in 000.0km format
       lcdZeroPaddedPrint(total_distance, 4, true);
@@ -916,7 +895,7 @@ void pushPinHi(byte pin, unsigned char delayms)
 void setup()
 {
   pinMode(13, OUTPUT); // Piezo Buzzer
-  
+
   pinMode(17, INPUT); // Button
   digitalWrite(17, HIGH); // Configure internal pull-up resistor
 
@@ -945,20 +924,20 @@ void setup()
   //if (EEPROM.read(1) == 0xff) { EEPROM.write(0, pag_select); }
   //if (EEPROM.read(2) == 0xff) { EEPROM.write(0, ect_alarm); }
   //if (EEPROM.read(3) == 0xff) { EEPROM.write(0, vss_alarm); }
-  
+
   obd_select = EEPROM.read(0);
   //pag_select = EEPROM.read(1);
   //ect_alarm = EEPROM.read(2); // over heat ???
   //vss_alarm = EEPROM.read(3); // over speed ???
 
-  
+
   dlcInit();
 
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Honda OBD v1.0");
+  lcd.print(" Honda OBD v1.0");
   lcd.setCursor(0,1);
-  lcd.print("OBD Select: ");
+  lcd.print(" ECU Type: OBD");
   lcd.print(obd_select);
 
   delay(1000);
@@ -975,9 +954,9 @@ void loop() {
       elm_mode = true;
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Bluetooth Mode");
+      lcd.print(" Bluetooth Mode");
       lcd.setCursor(0,1);
-      lcd.print("OBD Select: ");
+      lcd.print(" ECU Type: OBD");
       lcd.print(obd_select);
     }
     procbtSerial();
