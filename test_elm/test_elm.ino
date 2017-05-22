@@ -11,8 +11,10 @@ bool elm_header = false;
 int  elm_protocol = 0; // auto
 
 void bt_write(char *str) {
-  while (*str != '\0')
+  while (*str != '\0') {
     btSerial.write(*str++);
+    if (!elm_space && *str == 32) *str++; // skip space
+  }
 }
 
 void read_reply() {
@@ -32,6 +34,7 @@ void procbtSerial(void) {
       if (btdata1[i] == '\r') { // terminate at \r
         btdata1[i] = '\0';
   
+        byte len = strlen(btdata1);
         if (!strcmp(btdata1, "ATD")) {
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
@@ -39,29 +42,30 @@ void procbtSerial(void) {
           sprintf_P(btdata2, PSTR("Honda OBD v1.0\r\n>"));
         }
         else if (!strcmp(btdata1, "ATZ")) { // reset all / general
+          elm_space = false;
           sprintf_P(btdata2, PSTR("Honda OBD v1.0\r\n>"));
         }
-        else if (strlen(btdata1) == 4 && strstr(btdata1, "ATE")) { // echo on/off / general
+        else if (len == 4 && strstr(btdata1, "ATE")) { // echo on/off / general
           elm_echo = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (strlen(btdata1) == 4 && strstr(btdata1, "ATL")) { // linfeed on/off / general
+        else if (len == 4 && strstr(btdata1, "ATL")) { // linfeed on/off / general
           elm_linefeed = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (strlen(btdata1) == 4 && strstr(btdata1, "ATM")) { // memory on/off / general
+        else if (len == 4 && strstr(btdata1, "ATM")) { // memory on/off / general
           elm_memory = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (strlen(btdata1) == 4 && strstr(btdata1, "ATS")) { // space on/off / obd
+        else if (len == 4 && strstr(btdata1, "ATS")) { // space on/off / obd
           elm_space = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (strlen(btdata1) == 4 && strstr(btdata1, "ATH")) { // headers on/off / obd
+        else if (len == 4 && strstr(btdata1, "ATH")) { // headers on/off / obd
           elm_header = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (strlen(btdata1) == 5 && strstr(btdata1, "ATSP")) { // set protocol to ? and save it / obd
+        else if (len == 5 && strstr(btdata1, "ATSP")) { // set protocol to ? and save it / obd
           //elm_protocol = atoi(btdata1[4]);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
@@ -92,94 +96,97 @@ void procbtSerial(void) {
           //sprintf_P(btdata2, PSTR("43 01 33 00 00 00 00\r\n>"), a);
           //sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (!strcmp(btdata1, "0100")) {
-          sprintf_P(btdata2, PSTR("41 00 BE 3E B0 11\r\n>"));
-        }
-        else if (!strcmp(btdata1, "0101")) { // dtc / AA BB CC DD / A7 = MIL on/off, A6-A0 = DTC_CNT
-        }
-        //else if (!strcmp(btdata1, "0102")) { // freeze dtc / 00 61 ???
-        //  if (dlcCommand(0x20, 0x05, 0x98, 0x02, dlcdata)) {
-        //    sprintf_P(btdata2, PSTR("41 02 %02X %02X\r\n>"), dlcdata[2], dlcdata[3]);
-        //  }
-        //}
-        //else if (!strcmp(btdata1, "0103")) { // fuel system status / 01 00 ???
-        //}
-        //else if (!strcmp(btdata1, "0104")) { // engine load (%)
-        //}
-        else if (!strcmp(btdata1, "0105")) { // ect (°C)
-          sprintf_P(btdata2, PSTR("41 05 50\r\n>")); // 40
-        }
-        /*
-        else if (!strcmp(btdata1, "0106")) { // short FT (%)
-          if (dlcCommand(0x20, 0x05, 0x20, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("41 06 %02X\r\n>"), dlcdata[2]);
+        else if (len <= 5 && btdata1[0] == '0' && btdata1[1] == '1') { // mode 01
+          
+          // multi pid 010C0B0D040E05
+          if (strstr(&btdata1[2], "00")) {
+            sprintf_P(btdata2, PSTR("41 00 BE 3E B0 11\r\n>"));
           }
-        }
-        else if (!strcmp(btdata1, "0107")) { // long FT (%)
-          if (dlcCommand(0x20, 0x05, 0x22, 0x01, dlcdata)) {
-            sprintf_P(btdata2, PSTR("41 07 %02X\r\n>"), dlcdata[2]);
+          else if (strstr(&btdata1[2], "01")) { // dtc / AA BB CC DD / A7 = MIL on/off, A6-A0 = DTC_CNT
           }
-        }
-        */
-        // multi pid 010C0B0D040E05
-        //else if (!strcmp(data, "010A")) { // fuel pressure
-        //  btSerial.print("41 0A EF\r\n");
-        //}
-        else if (!strcmp(btdata1, "010B")) { // map (kPa)
-          byte maps = 30; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
-          sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), maps);
-        }
-        else if (!strcmp(btdata1, "010C")) { // rpm
-          int rpm = 750;
-          rpm = rpm * 4;
-          sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(rpm), lowByte(rpm)); //((A*256)+B)/4
-        }
-        else if (!strcmp(btdata1, "010D")) { // vss (km/h)
-          byte vss = 0;
-          sprintf_P(btdata2, PSTR("41 0D %02X\r\n>"), vss); // 0
-        }
-        else if (!strcmp(btdata1, "010E")) { // timing advance (°)
-          //byte b = ((dlcdata[2] - 24) / 2) + 128;
-          //sprintf_P(btdata2, PSTR("41 0E %02X\r\n>"), b);
-        }
-        else if (!strcmp(btdata1, "010F")) { // iat (°C)
-          sprintf_P(btdata2, PSTR("41 0F 46\r\n>")); // 30
-        }
-        else if (!strcmp(btdata1, "0111")) { // tps (%)
-          byte tps = 0;
-          sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), tps);
-        }
-        else if (!strcmp(btdata1, "0113")) { // o2 sensor present ???
-          sprintf_P(btdata2, PSTR("41 13 80\r\n>")); // 10000000 / assume bank 1 present
-        }
-        else if (!strcmp(btdata1, "0114")) { // o2 (V)
-          //sprintf_P(btdata2, PSTR("41 14 %02X FF\r\n>"), dlcdata[2]);
-        }
-        else if (!strcmp(btdata1, "011C")) {
-          sprintf_P(btdata2, PSTR("41 1C 01\r\n>")); // obd2
-        }
-        else if (!strcmp(btdata1, "0120")) {
-          sprintf_P(btdata2, PSTR("41 20 00 00 20 01\r\n>")); // pid 33 and 40
-        }
-        //else if (!strcmp(btdata1, "012F")) { // fuel level (%)
-        //  sprintf_P(btdata2, PSTR("41 2F FF\r\n>")); // max
-        //}
-        else if (!strcmp(btdata1, "0133")) { // baro (kPa)
-          byte baro = 101; // 101 kPa
-          sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), baro);
-        }
-        else if (!strcmp(btdata1, "0140")) {
-          sprintf_P(btdata2, PSTR("41 40 48 00 00 00\r\n>")); // pid 42 and 45
-        }
-        else if (!strcmp(btdata1, "0142")) { // ecu voltage (V)
-          float f = 12.95;
-          unsigned int u = f * 1000; // ((A*256)+B)/1000
-          sprintf_P(btdata2, PSTR("41 42 %02X %02X\r\n>"), highByte(u), lowByte(u));
-        }
-        else if (!strcmp(btdata1, "0145")) { // iacv / relative throttle position
-          //byte iacv = 15 * (255 / 100);
-          byte iacv = 38; // 15 %
-          sprintf_P(btdata2, PSTR("41 45 %02X\r\n>"), iacv);
+          //else if (strstr(&btdata1[2], "02")) { // freeze dtc / 00 61 ???
+          //  if (dlcCommand(0x20, 0x05, 0x98, 0x02, dlcdata)) {
+          //    sprintf_P(btdata2, PSTR("41 02 %02X %02X\r\n>"), dlcdata[2], dlcdata[3]);
+          //  }
+          //}
+          //else if (strstr(&btdata1[2], "03")) { // fuel system status / 01 00 ???
+          //}
+          //else if (strstr(&btdata1[2], "04")) { // engine load (%)
+          //}
+          else if (strstr(&btdata1[2], "05")) { // ect (°C)
+            sprintf_P(btdata2, PSTR("41 05 50\r\n>")); // 40
+          }
+          /*
+          else if (strstr(&btdata1[2], "06")) { // short FT (%)
+            if (dlcCommand(0x20, 0x05, 0x20, 0x01, dlcdata)) {
+              sprintf_P(btdata2, PSTR("41 06 %02X\r\n>"), dlcdata[2]);
+            }
+          }
+          else if (strstr(&btdata1[2], "07")) { // long FT (%)
+            if (dlcCommand(0x20, 0x05, 0x22, 0x01, dlcdata)) {
+              sprintf_P(btdata2, PSTR("41 07 %02X\r\n>"), dlcdata[2]);
+            }
+          }
+          */
+          //else if (!strstr(&btdata1[2], "0A")) { // fuel pressure
+          //  btSerial.print("41 0A EF\r\n");
+          //}
+          else if (strstr(&btdata1[2], "0B")) { // map (kPa)
+            byte maps = 30; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
+            sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), maps);
+          }
+          else if (strstr(&btdata1[2], "0C")) { // rpm
+            int rpm = 750;
+            rpm = rpm * 4;
+            sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(rpm), lowByte(rpm)); //((A*256)+B)/4
+          }
+          else if (strstr(&btdata1[2], "0D")) { // vss (km/h)
+            byte vss = 0;
+            sprintf_P(btdata2, PSTR("41 0D %02X\r\n>"), vss); // 0
+          }
+          else if (strstr(&btdata1[2], "0E")) { // timing advance (°)
+            //byte b = ((dlcdata[2] - 24) / 2) + 128;
+            //sprintf_P(btdata2, PSTR("41 0E %02X\r\n>"), b);
+          }
+          else if (strstr(&btdata1[2], "0F")) { // iat (°C)
+            sprintf_P(btdata2, PSTR("41 0F 46\r\n>")); // 30
+          }
+          else if (strstr(&btdata1[2], "11")) { // tps (%)
+            byte tps = 0;
+            sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), tps);
+          }
+          else if (strstr(&btdata1[2], "13")) { // o2 sensor present ???
+            sprintf_P(btdata2, PSTR("41 13 80\r\n>")); // 10000000 / assume bank 1 present
+          }
+          else if (strstr(&btdata1[2], "14")) { // o2 (V)
+            //sprintf_P(btdata2, PSTR("41 14 %02X FF\r\n>"), dlcdata[2]);
+          }
+          else if (strstr(&btdata1[2], "1C")) {
+            sprintf_P(btdata2, PSTR("41 1C 01\r\n>")); // obd2
+          }
+          else if (strstr(&btdata1[2], "20")) {
+            sprintf_P(btdata2, PSTR("41 20 00 00 20 01\r\n>")); // pid 33 and 40
+          }
+          //else if (!strcmp(btdata1, "2F")) { // fuel level (%)
+          //  sprintf_P(btdata2, PSTR("41 2F FF\r\n>")); // max
+          //}
+          else if (strstr(&btdata1[2], "33")) { // baro (kPa)
+            byte baro = 101; // 101 kPa
+            sprintf_P(btdata2, PSTR("41 33 %02X\r\n>"), baro);
+          }
+          else if (strstr(&btdata1[2], "40")) {
+            sprintf_P(btdata2, PSTR("41 40 48 00 00 00\r\n>")); // pid 42 and 45
+          }
+          else if (strstr(&btdata1[2], "0142")) { // ecu voltage (V)
+            float f = 12.95;
+            unsigned int u = f * 1000; // ((A*256)+B)/1000
+            sprintf_P(btdata2, PSTR("41 42 %02X %02X\r\n>"), highByte(u), lowByte(u));
+          }
+          else if (strstr(&btdata1[2], "0145")) { // iacv / relative throttle position
+            //byte iacv = 15 * (255 / 100);
+            byte iacv = 38; // 15 %
+            sprintf_P(btdata2, PSTR("41 45 %02X\r\n>"), iacv);
+          }
         }
 
         if (strlen(btdata2) == 0) {
