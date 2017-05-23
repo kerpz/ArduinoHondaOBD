@@ -1,3 +1,28 @@
+/*
+ Application:
+ - ELM327 Bluetooth Simulation
+ 
+ Author:
+ - Philip Bordado (kerpz@yahoo.com)
+
+ Hardware:
+ - Arduino UNO (Compatible board)
+ - HC-05/HC-06 Bluetooth module
+
+ Software:
+ - Arduino 1.6.9
+ - SoftwareSerialWithHalfDuplex (Library)
+   https://github.com/nickstedman/SoftwareSerialWithHalfDuplex
+   
+ Arduino Pin Mapping:
+
+ - 00 = Serial RX
+ - 01 = Serial TX
+ - 10 = Bluetooth RX
+ - 11 = Bluetooth TX
+
+*/
+
 #include <SoftwareSerial.h>
 
 SoftwareSerial btSerial(10, 11); // RX, TX
@@ -5,15 +30,16 @@ SoftwareSerial btSerial(10, 11); // RX, TX
 bool elm_mode = false;
 bool elm_memory = false;
 bool elm_echo = false;
-bool elm_space = false;
-bool elm_linefeed = false;
+bool elm_space = true;
+bool elm_linefeed = true;
 bool elm_header = false;
 int  elm_protocol = 0; // auto
 
-void bt_write(char *str) {
+void bt_write(char *str, bool elm_proto = false) {
   while (*str != '\0') {
+    if (elm_proto && !elm_space && *str == 32) *str++; // skip space
+    if (elm_proto && !elm_linefeed && *str == 10) *str++; // skip linefeed
     btSerial.write(*str++);
-    if (!elm_space && *str == 32) *str++; // skip space
   }
 }
 
@@ -30,19 +56,26 @@ void procbtSerial(void) {
     int i = 0;
     while (btSerial.available()) {
       btdata1[i] = toupper(btSerial.read());
-      Serial.print(btdata1[i]);
+      //Serial.print(btdata1[i]);
       if (btdata1[i] == '\r') { // terminate at \r
         btdata1[i] = '\0';
   
         byte len = strlen(btdata1);
-        if (!strcmp(btdata1, "ATD")) {
+        if (!strcmp(btdata1, "ATD")) { // defaults
+          elm_echo = false;
+          elm_space = true;
+          elm_linefeed = true;
+          elm_header = false;
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (!strcmp(btdata1, "ATI")) { // print id / general
           sprintf_P(btdata2, PSTR("Honda OBD v1.0\r\n>"));
         }
         else if (!strcmp(btdata1, "ATZ")) { // reset all / general
-          elm_space = false;
+          elm_echo = false;
+          elm_space = true;
+          elm_linefeed = true;
+          elm_header = false;
           sprintf_P(btdata2, PSTR("Honda OBD v1.0\r\n>"));
         }
         else if (len == 4 && strstr(btdata1, "ATE")) { // echo on/off / general
@@ -86,18 +119,18 @@ void procbtSerial(void) {
         // sscanf(data, "%02X%02X", mode, pid)
         // reset dtc/ecu honda
         // 21 04 01 DA / 01 03 FC
-        else if (!strcmp(btdata1, "04")) { // clear dtc / stored values
+        else if (!strcmp(btdata1, "04")) { // mode 04  // clear dtc / stored values
           //dlcCommand(0x21, 0x04, 0x01, 0x00, dlcdata); // reset ecu
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (!strcmp(btdata1, "03")) { // request dtc
+        else if (!strcmp(btdata1, "03")) { // mode 03 // request dtc
           // do scan then report the errors
           // 43 01 33 00 00 00 00 = P0133
           //sprintf_P(btdata2, PSTR("43 01 33 00 00 00 00\r\n>"), a);
           //sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (len <= 5 && btdata1[0] == '0' && btdata1[1] == '1') { // mode 01
-          
+          // https://en.wikipedia.org/wiki/OBD-II_PIDs
           // multi pid 010C0B0D040E05
           if (strstr(&btdata1[2], "00")) {
             sprintf_P(btdata2, PSTR("41 00 BE 3E B0 11\r\n>"));
@@ -114,7 +147,9 @@ void procbtSerial(void) {
           //else if (strstr(&btdata1[2], "04")) { // engine load (%)
           //}
           else if (strstr(&btdata1[2], "05")) { // ect (°C)
-            sprintf_P(btdata2, PSTR("41 05 50\r\n>")); // 40
+            byte v = 40;
+            v = v + 40; // conversion
+            sprintf_P(btdata2, PSTR("41 05 %02X\r\n>"), v);
           }
           /*
           else if (strstr(&btdata1[2], "06")) { // short FT (%)
@@ -128,34 +163,40 @@ void procbtSerial(void) {
             }
           }
           */
-          //else if (!strstr(&btdata1[2], "0A")) { // fuel pressure
-          //  btSerial.print("41 0A EF\r\n");
-          //}
+          else if (!strstr(&btdata1[2], "0A")) { // fuel pressure
+            byte v = 255; // 255 kPa / 37 psi
+            v = v / 3; // conversion
+            sprintf_P(btdata2, PSTR("41 0A %02X\r\n>"), v);
+          }
           else if (strstr(&btdata1[2], "0B")) { // map (kPa)
-            byte maps = 30; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
-            sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), maps);
+            byte v = 30; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
+            sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), v);
           }
           else if (strstr(&btdata1[2], "0C")) { // rpm
-            int rpm = 750;
-            rpm = rpm * 4;
-            sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(rpm), lowByte(rpm)); //((A*256)+B)/4
+            int v = 750;
+            v = v * 4; // conversion
+            sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(v), lowByte(v)); //((A*256)+B)/4
           }
           else if (strstr(&btdata1[2], "0D")) { // vss (km/h)
-            byte vss = 0;
-            sprintf_P(btdata2, PSTR("41 0D %02X\r\n>"), vss); // 0
+            byte v = 0;
+            sprintf_P(btdata2, PSTR("41 0D %02X\r\n>"), v);
           }
           else if (strstr(&btdata1[2], "0E")) { // timing advance (°)
-            //byte b = ((dlcdata[2] - 24) / 2) + 128;
-            //sprintf_P(btdata2, PSTR("41 0E %02X\r\n>"), b);
+            float f = 16.50;
+            byte v = (f + 64) * 2; // conversion
+            sprintf_P(btdata2, PSTR("41 0E %02X\r\n>"), v);
           }
           else if (strstr(&btdata1[2], "0F")) { // iat (°C)
-            sprintf_P(btdata2, PSTR("41 0F 46\r\n>")); // 30
+            byte v = 30;
+            v = v + 40; // conversion
+            sprintf_P(btdata2, PSTR("41 0F %02X\r\n>"), v);
           }
           else if (strstr(&btdata1[2], "11")) { // tps (%)
-            byte tps = 0;
-            sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), tps);
+            byte v = 0;
+            v = (v * 255) / 100; // conversion to byte range
+            sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), v);
           }
-          else if (strstr(&btdata1[2], "13")) { // o2 sensor present ???
+          else if (strstr(&btdata1[2], "13")) { // o2 sensor present
             sprintf_P(btdata2, PSTR("41 13 80\r\n>")); // 10000000 / assume bank 1 present
           }
           else if (strstr(&btdata1[2], "14")) { // o2 (V)
@@ -167,12 +208,14 @@ void procbtSerial(void) {
           else if (strstr(&btdata1[2], "20")) {
             sprintf_P(btdata2, PSTR("41 20 00 00 20 01\r\n>")); // pid 33 and 40
           }
-          //else if (!strcmp(btdata1, "2F")) { // fuel level (%)
-          //  sprintf_P(btdata2, PSTR("41 2F FF\r\n>")); // max
-          //}
+          else if (strstr(&btdata1[2], "2F")) { // fuel level (%)
+            byte v = 75;
+            v = (v * 255) / 100; // conversion to byte range
+            sprintf_P(btdata2, PSTR("41 2F %02X\r\n>"), v);
+          }
           else if (strstr(&btdata1[2], "33")) { // baro (kPa)
-            byte baro = 101; // 101 kPa
-            sprintf_P(btdata2, PSTR("41 33 %02X\r\n>"), baro);
+            byte v = 101; // 101 kPa
+            sprintf_P(btdata2, PSTR("41 33 %02X\r\n>"), v);
           }
           else if (strstr(&btdata1[2], "40")) {
             sprintf_P(btdata2, PSTR("41 40 48 00 00 00\r\n>")); // pid 42 and 45
@@ -182,16 +225,16 @@ void procbtSerial(void) {
             unsigned int u = f * 1000; // ((A*256)+B)/1000
             sprintf_P(btdata2, PSTR("41 42 %02X %02X\r\n>"), highByte(u), lowByte(u));
           }
-          else if (strstr(&btdata1[2], "0145")) { // iacv / relative throttle position
-            //byte iacv = 15 * (255 / 100);
-            byte iacv = 38; // 15 %
-            sprintf_P(btdata2, PSTR("41 45 %02X\r\n>"), iacv);
+          else if (strstr(&btdata1[2], "45")) { // iacv / relative throttle position (%)
+            byte v = 15;
+            v = (v * 255) / 100; // conversion to byte range
+            sprintf_P(btdata2, PSTR("41 45 %02X\r\n>"), v);
           }
         }
 
-        if (strlen(btdata2) == 0) {
+        if (strlen(btdata2) == 0)
           sprintf_P(btdata2, PSTR("NO DATA\r\n>"));
-        }
+
         bt_write(btdata2); // send reply
 
         break;
@@ -212,56 +255,8 @@ void setup()
 }
 
 void loop() {
-  /*
-  if (Serial.available()) {
-    btSerial.write(Serial.read());
-  }
-  
-  if (btSerial.available()) {
-    Serial.write(btSerial.read());
-  }
-  */
-  
   if (btSerial.available()) {
     procbtSerial();
-  }
-
-  if (Serial.available()) {
-    //Serial.print(Serial.read());
-    
-    Serial.read();
-    Serial.println("Ready. press any key to program BT.");
-    
-    btSerial.print("AT");
-    read_reply();
-
-    //btSerial.println("at+version?");
-    //read_reply();
-
-    /*
-    btSerial.println("at+name=HOBD");
-    read_reply();
-
-    btSerial.println("at+pswd=aki3k3rpz3");
-    read_reply();
-
-    btSerial.println("at+uart=9600,0,0");
-    read_reply();
-    */
-
-    //btSerial.println("at+role?");
-    //read_reply();
-
-    //btSerial.println("at+name?");
-    //read_reply();
-
-    //btSerial.println("at+state?");
-    //read_reply();
-
-    //btSerial.println("at+polar?");
-    //read_reply();
-
-    Serial.println("Done.");
   }
 }
 
