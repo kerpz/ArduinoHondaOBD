@@ -35,10 +35,10 @@ bool elm_linefeed = true;
 bool elm_header = false;
 int  elm_protocol = 0; // auto
 
-void bt_write(char *str, bool elm_proto = false) {
+void bt_write(char *str) {
   while (*str != '\0') {
-    if (elm_proto && !elm_space && *str == 32) *str++; // skip space
-    if (elm_proto && !elm_linefeed && *str == 10) *str++; // skip linefeed
+    if (!elm_linefeed && *str == 10) *str++; // skip linefeed for all reply
+    if (str[0] == '4' && !elm_space && *str == 32) *str++; // skip space for obd reply
     btSerial.write(*str++);
   }
 }
@@ -56,7 +56,9 @@ void procbtSerial(void) {
     int i = 0;
     while (btSerial.available()) {
       btdata1[i] = toupper(btSerial.read());
-      //Serial.print(btdata1[i]);
+      
+      Serial.print(btdata1[i]); // debug
+      
       if (btdata1[i] == '\r') { // terminate at \r
         btdata1[i] = '\0';
   
@@ -87,7 +89,7 @@ void procbtSerial(void) {
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (len == 4 && strstr(btdata1, "ATM")) { // memory on/off / general
-          elm_memory = (btdata1[3] == '1' ? true : false);
+          //elm_memory = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (len == 4 && strstr(btdata1, "ATS")) { // space on/off / obd
@@ -95,7 +97,7 @@ void procbtSerial(void) {
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (len == 4 && strstr(btdata1, "ATH")) { // headers on/off / obd
-          elm_header = (btdata1[3] == '1' ? true : false);
+          //elm_header = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (len == 5 && strstr(btdata1, "ATSP")) { // set protocol to ? and save it / obd
@@ -115,27 +117,30 @@ void procbtSerial(void) {
           sprintf_P(btdata2, PSTR("%d.%dV\r\n>"), v1, v2);
         }
         
+        // https://en.wikipedia.org/wiki/OBD-II_PIDs
         // sprintf_P(cmd_str, PSTR("%02X%02X\r"), mode, pid);
         // sscanf(data, "%02X%02X", mode, pid)
-        // reset dtc/ecu honda
-        // 21 04 01 DA / 01 03 FC
-        else if (!strcmp(btdata1, "04")) { // mode 04  // clear dtc / stored values
+        else if (len == 2 && btdata1[0] == '0' && btdata1[1] == '4') { // mode 04
+          // clear dtc / stored values
+          // reset dtc/ecu honda
+          // 21 04 01 DA / 01 03 FC
           //dlcCommand(0x21, 0x04, 0x01, 0x00, dlcdata); // reset ecu
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (!strcmp(btdata1, "03")) { // mode 03 // request dtc
+        else if (len == 2 && btdata1[0] == '0' && btdata1[1] == '3') { // mode 03
+          // request dtc
           // do scan then report the errors
           // 43 01 33 00 00 00 00 = P0133
           //sprintf_P(btdata2, PSTR("43 01 33 00 00 00 00\r\n>"), a);
           //sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (len <= 5 && btdata1[0] == '0' && btdata1[1] == '1') { // mode 01
-          // https://en.wikipedia.org/wiki/OBD-II_PIDs
           // multi pid 010C0B0D040E05
           if (strstr(&btdata1[2], "00")) {
             sprintf_P(btdata2, PSTR("41 00 BE 3E B0 11\r\n>"));
           }
-          else if (strstr(&btdata1[2], "01")) { // dtc / AA BB CC DD / A7 = MIL on/off, A6-A0 = DTC_CNT
+          else if (strstr(&btdata1[2], "01")) {
+            // dtc / AA BB CC DD / A7 = MIL on/off, A6-A0 = DTC_CNT
           }
           //else if (strstr(&btdata1[2], "02")) { // freeze dtc / 00 61 ???
           //  if (dlcCommand(0x20, 0x05, 0x98, 0x02, dlcdata)) {
@@ -144,25 +149,26 @@ void procbtSerial(void) {
           //}
           //else if (strstr(&btdata1[2], "03")) { // fuel system status / 01 00 ???
           //}
-          //else if (strstr(&btdata1[2], "04")) { // engine load (%)
-          //}
+          else if (strstr(&btdata1[2], "04")) { // engine load (%)
+            byte v = 0;
+            v = (v * 255) / 100; // conversion to byte range
+            sprintf_P(btdata2, PSTR("41 04 %02X\r\n>"), v);
+          }
           else if (strstr(&btdata1[2], "05")) { // ect (°C)
             byte v = 40;
             v = v + 40; // conversion
             sprintf_P(btdata2, PSTR("41 05 %02X\r\n>"), v);
           }
-          /*
           else if (strstr(&btdata1[2], "06")) { // short FT (%)
-            if (dlcCommand(0x20, 0x05, 0x20, 0x01, dlcdata)) {
-              sprintf_P(btdata2, PSTR("41 06 %02X\r\n>"), dlcdata[2]);
-            }
+            byte v = 20; // -100 too rich, 99.2 too lean
+            v = ((v + 100) * 128) / 100; // conversion
+            sprintf_P(btdata2, PSTR("41 06 %02X\r\n>"), v);
           }
           else if (strstr(&btdata1[2], "07")) { // long FT (%)
-            if (dlcCommand(0x20, 0x05, 0x22, 0x01, dlcdata)) {
-              sprintf_P(btdata2, PSTR("41 07 %02X\r\n>"), dlcdata[2]);
-            }
+            byte v = 20; // -100 too rich, 99.2 too lean
+            v = ((v + 100) * 128) / 100; // conversion
+            sprintf_P(btdata2, PSTR("41 07 %02X\r\n>"), v);
           }
-          */
           else if (!strstr(&btdata1[2], "0A")) { // fuel pressure
             byte v = 255; // 255 kPa / 37 psi
             v = v / 3; // conversion
@@ -239,7 +245,7 @@ void procbtSerial(void) {
 
         break;
       }
-      else if (btdata1[i] != ' ') { // ignore space
+      else if (btdata1[i] != 32 || btdata1[i] != 10) { // ignore space and newline
         ++i;
       }
     }
