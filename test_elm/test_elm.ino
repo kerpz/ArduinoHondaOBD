@@ -36,18 +36,12 @@ bool elm_header = false;
 int  elm_protocol = 0; // auto
 
 void bt_write(char *str) {
+  char c = *str;
   while (*str != '\0') {
     if (!elm_linefeed && *str == 10) *str++; // skip linefeed for all reply
-    if (str[0] == '4' && !elm_space && *str == 32) *str++; // skip space for obd reply
+    if (c == '4' && !elm_space && *str == 32) *str++; // skip space for obd reply
     btSerial.write(*str++);
   }
-}
-
-void read_reply() {
-    delay(200);
-    while (btSerial.available()) {
-      Serial.write(btSerial.read());
-    }
 }
 
 void procbtSerial(void) {
@@ -57,7 +51,7 @@ void procbtSerial(void) {
     while (btSerial.available()) {
       btdata1[i] = toupper(btSerial.read());
       
-      Serial.print(btdata1[i]); // debug
+      //Serial.print(btdata1[i]); // debug
       
       if (btdata1[i] == '\r') { // terminate at \r
         btdata1[i] = '\0';
@@ -119,7 +113,7 @@ void procbtSerial(void) {
         
         // https://en.wikipedia.org/wiki/OBD-II_PIDs
         // sprintf_P(cmd_str, PSTR("%02X%02X\r"), mode, pid);
-        // sscanf(data, "%02X%02X", mode, pid)
+        // sscanf(btdata1, "%02X%02X", mode, pid)
         else if (len == 2 && btdata1[0] == '0' && btdata1[1] == '4') { // mode 04
           // clear dtc / stored values
           // reset dtc/ecu honda
@@ -169,7 +163,7 @@ void procbtSerial(void) {
             v = ((v + 100) * 128) / 100; // conversion
             sprintf_P(btdata2, PSTR("41 07 %02X\r\n>"), v);
           }
-          else if (!strstr(&btdata1[2], "0A")) { // fuel pressure
+          else if (strstr(&btdata1[2], "0A")) { // fuel pressure
             byte v = 255; // 255 kPa / 37 psi
             v = v / 3; // conversion
             sprintf_P(btdata2, PSTR("41 0A %02X\r\n>"), v);
@@ -226,7 +220,7 @@ void procbtSerial(void) {
           else if (strstr(&btdata1[2], "40")) {
             sprintf_P(btdata2, PSTR("41 40 48 00 00 00\r\n>")); // pid 42 and 45
           }
-          else if (strstr(&btdata1[2], "0142")) { // ecu voltage (V)
+          else if (strstr(&btdata1[2], "42")) { // ecu voltage (V)
             float f = 12.95;
             unsigned int u = f * 1000; // ((A*256)+B)/1000
             sprintf_P(btdata2, PSTR("41 42 %02X %02X\r\n>"), highByte(u), lowByte(u));
