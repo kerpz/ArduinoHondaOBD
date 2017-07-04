@@ -14,8 +14,13 @@
  - Arduino 1.6.9
  - SoftwareSerialWithHalfDuplex (Library)
    https://github.com/nickstedman/SoftwareSerialWithHalfDuplex
+<<<<<<< HEAD
  - NewLiquidCrystal (Library) 1.3.4
    https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads/
+=======
+ - NewLiquidCrystal (Library)
+   https://bitbucket.org/fmalpartida/new-liquidcrystal/wiki/Home
+>>>>>>> de119f741d4c55ace48af358794c83738e5f7991
    
  Formula:
  - IMAP = RPM * MAP / IAT / 2
@@ -320,7 +325,6 @@ void procbtSerial() {
         }
         // kerpz custom AT cmd
         else if (len == 6 && strstr(btdata1, "ATSHP")) { // set hobd protocol
-          if (btdata1[5] == '0') { obd_select = 0; }
           if (btdata1[5] == '1') { obd_select = 1; }
           if (btdata1[5] == '2') { obd_select = 2; }
           EEPROM.write(0, obd_select);
@@ -755,7 +759,7 @@ void procdlcSerial() {
       //lcd.clear();
     
       // display up to 10 error codes
-      // 00 00 00 00 00 
+      // 00 00 00 00 00
       // 00 00 00 00 00
       lcd.setCursor(0,0);
       memset(data, 0, 20);
@@ -824,7 +828,6 @@ void procdlcSerial() {
       }
       else {
         for (i=errcnt; i<10; i++) {
-          lcd.print("   ");
           if (i > 5) {
             lcd.print(" ");
             lcd.setCursor(0,1);
@@ -833,6 +836,7 @@ void procdlcSerial() {
             lcd.print(" ");
             break;
           }
+          lcd.print("   ");
         }
       }
       // shift 4 bits left and right to get a value
@@ -845,6 +849,104 @@ void procdlcSerial() {
       // 46 12=egr 13=baro
       // 47 14=iac 15=ign
       // 48 16=vss
+
+      // https://honda-tech.com/forums/honda-accord-1990-2002-2/check-engine-light-codes-cel-diagnostic-trouble-codes-dtc-malfunction-indicator-light-mil-1490107/
+      /*
+      Now for the codes with the CEL codes listed in the first column:
+      MIL OBDII  Description of Code
+      1 P0131 Primary HO2S Circuit Low Voltage (Sensor 1)
+      1 P0132 Primary HO2S Circuit High Voltage (Sensor 1)
+      3 P0107 MAP Circuit Low Input
+      3 P0108 MAP Circuit High Input
+      4 P0335 CKP Sensor Circuit Low Input
+      4 P0336 CKP Sensor Range/Performance
+      5 P0106 MAP Circuit Range Or Performance
+      5 P1128 MAP Lower Than Expected
+      5 P1129 MAP Higher Than Expected
+      6 P0117 ECT Circuit Low Input
+      6 P0118 ECT Circuit High Input
+      7 P0122 TP Sensor Circuit Low Input
+      7 P0123 TP Sensor Circuit High Input
+      7 P1121 Throttle Position Lower Than Expected
+      7 P1122 Throttle Position Higher Than Expected
+      8 P1359 CKP/TDC Sensor Connector Disconnection
+      8 P1361 TDC Sensor Intermittent Interruption
+      8 P1362 TDC Sensor No Signal
+      9 P1381 Cylinder Position Sensor Intermittent Interruption
+      9 P1382 Cylinder Position Sensor No Signal
+      10  P0111 IAT Sensor Circuit Range/Performance
+      10  P0112 IAT Sensor Circuit Low Input
+      10  P0113 IAT Sensor Circuit High Input
+      12  P1491 EGR Valve Lift Insufficient Detected
+      12  P1498 EGR Valve Lift Sensor High Voltage
+      13  P1106 BARO Circuit Range/Performance
+      13  P1107 BARO Circuit Low Input
+      13  P1108 BARO Circuit High Input
+      14  P0505 ICS Malfunction
+      14  P1508 IAC Valve Circuit Failure
+      14  P1509 IAC Valve Circuit Failure
+      14  P1519 Idle Air Control Valve Circuit Failure
+      17  P0500 VSS Circuit Malfunction (M/T)
+      17  P0501 VSS Circuit Range/Performance (A/T)
+      20  P1297 Electrical Load Detector Circuit Low Input
+      20  P1298 Electrical Load Detector Circuit High Input
+      21  P1253 VTEC System Malfunction
+      22  P1257, P1258, P1259 VTEC System Malfunction
+      23  P0325 KS Circuit Malfunction
+      30  P1655 SEAF/SEFA/TMA/TMB Signal Line Failure
+      30  P1681 A/T FI Signal A Low Input
+      30  P1682 A/T FI Signal A High Input
+      31  P1686 A/T FI Signal B Low Input
+      31  P1687 A/T FI Signal B High Input
+      34  P0560 Powertrain Control Module (PCM) Backup Voltage Circuit Low Voltage
+      41  P0135 Front HO2S Heater Circuit Fault (Sensor 1)
+      41  P1166 Primary HO2S (No. 1) Heater System Electrical
+      41  P1167 Primary HO2S (No. 1) Heater System
+      45  P0171 System Too Lean
+      45  P0172 System Too Rich
+      48  P1162 Primary HO2S (No. 1) Circuit Malfunction
+      48  P1168 Primary HO2S (No. 1) LABEL Low Input
+      48  P1169 Primary HO2S (No. 1) LABEL High Input
+      54  P1336 CSF Sensor Intermittent Interruption
+      54  P1337 CSF Sensor No Signal
+      58  P1366 TDC Sensor No. 2 Intermittent Interruption
+      58  P1367 TDC Sensor No 2 Signal
+      61  P0133 Primary HO2S Circuit Slow Response (Sensor 1)
+      61  P1149 Primary HO2S (Sensor 1) Circuit Range/Performance Problem
+      61  P1163 Primary HO2S (No. 1) Circuit Slow Response
+      61  P1164 Primary HO2S (No. 1) Circuit Range/Performance
+      61  P1165 Primary HO2S (No. 1) Circuit Range/Performance
+      63  P0137 Secondary HO2S Circuit Low Voltage (Sensor 2)
+      63  P0138 Secondary HO2S Circuit High Voltage (Sensor 2)
+      63  P0139 Secondary HO2S Circuit Slow Response (Sensor 2)
+      65  P0141 Secondary HO2S Heater Circuit Fault (Sensor 2)
+      67  P0420 Catalyst System Efficiency Below Threshold
+      70  P0700, P0715, P0720, P0725, P0730, P0740, P0753, P0758, P0763, P0780 A/T Concerns
+      70  P1660 A/T FI Signal A Circuit Failure
+      70  P1705, P1706, P1738, P1739, P1753, P1758, P1768, P1773, P1785, P1786, P1790, P1791, P1792, P1793, P1794 A/T Concerns
+      70  P1870, P1873, P1879, P1885, P1886, P1888, P1890, P1891  A/T Concerns
+      71  P0301 Misfire Cyl. 1 Or Random Misfire
+      72  P0302 Misfire Cyl. 2 Or Random Misfire
+      73  P0303 Misfire Cyl. 3 Or Random Misfire
+      74  P0304 Misfire Cyl. 4 Or Random Misfire
+      75  P0305 Misfire Cyl. 5 Or Random Misfire
+      76  P0306 Misfire Cyl. 6 Or Random Misfire
+      80  P0401 EGR Insufficient Flow Detected
+      86  P0116 ECT Circuit Range Or Performance
+      90  P1456 EVAP Emission Control System Leak Detected (Fuel Tank System)
+      90  P1457 EVAP Emission Control System Leak Detected (Control Canister System)
+      91  P0451 Fuel Tank Pressure Sensor Range/Performance
+      91  P0452 Fuel Tank Pressure Sensor Circuit Low Input
+      91  P0453 Fuel Tank Pressure Sensor Circuit High Input
+      92  P0441 EVAP Emission Control System Improper Purge Flow
+      92  P1459 EVAP Emission Purge Flow Switch Malfunction
+      — P0300 Random Misfire
+      — P1486 Thermostat Range/Performance Problem
+      — P1607 ECM/PCM Internal Circuit Failure A
+      — P1676 FPTDR Signal Line Failure
+      — P1678 FPTDR Signal Line Failure
+      71–74 P1300 Multiple Cylinder Misfire Detected
+      */
     }
   }
 }  
@@ -896,7 +998,7 @@ void procButtons() {
   }
 }
 
-void pushPinHi(byte pin, unsigned char delayms)
+void pushPinHi(byte pin, unsigned int delayms)
 {
   digitalWrite(pin, HIGH);
   delay(delayms);
