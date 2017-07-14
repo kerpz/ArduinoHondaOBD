@@ -14,14 +14,10 @@
  - Arduino 1.6.9
  - SoftwareSerialWithHalfDuplex (Library)
    https://github.com/nickstedman/SoftwareSerialWithHalfDuplex
-<<<<<<< HEAD
+
  - NewLiquidCrystal (Library) 1.3.4
    https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads/
-=======
- - NewLiquidCrystal (Library)
-   https://bitbucket.org/fmalpartida/new-liquidcrystal/wiki/Home
->>>>>>> de119f741d4c55ace48af358794c83738e5f7991
-   
+
  Formula:
  - IMAP = RPM * MAP / IAT / 2
  - MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
