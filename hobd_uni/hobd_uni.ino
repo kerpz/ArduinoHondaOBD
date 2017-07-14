@@ -14,8 +14,13 @@
  - Arduino 1.6.9
  - SoftwareSerialWithHalfDuplex (Library)
    https://github.com/nickstedman/SoftwareSerialWithHalfDuplex
+<<<<<<< HEAD
+ - NewLiquidCrystal (Library) 1.3.4
+   https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads/
+=======
  - NewLiquidCrystal (Library)
    https://bitbucket.org/fmalpartida/new-liquidcrystal/wiki/Home
+>>>>>>> de119f741d4c55ace48af358794c83738e5f7991
    
  Formula:
  - IMAP = RPM * MAP / IAT / 2
@@ -393,12 +398,12 @@ void procbtSerial() {
               sprintf_P(btdata2, PSTR("41 03 %02X %02X\r\n>"), dlcdata[2], dlcdata[3]);
             }
           }
-          */
           else if (strstr(&btdata1[2], "04")) { // engine load (%)
             if (dlcCommand(0x20, 0x05, 0x9c, 0x01, dlcdata)) {
               sprintf_P(btdata2, PSTR("41 04 %02X\r\n>"), dlcdata[2]);
             }
           }
+          */
           else if (strstr(&btdata1[2], "05")) { // ect (°C)
             if (dlcCommand(0x20, 0x05, 0x10, 0x01, dlcdata)) {
               float f = dlcdata[2];
@@ -630,9 +635,12 @@ void procdlcSerial() {
     // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
     // Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
     float maf = 0.0;
-    imap = (rpm * maps) / (iat + 273);
+    imap = rpm * maps / (iat + 273) / 2;
     // ve = 75, ed = 1.595, afr = 14.7
-    maf = (imap / 120) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
+    maf = (imap / 60) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
+    // (gallons of fuel) = (grams of air) / (air/fuel ratio) / 6.17 / 454
+    //gof = maf / afr / 6.17 / 454;
+    //gear = vss / (rpm+1) * 150 + 0.3;
 
 
     // trip computer essentials
@@ -724,7 +732,6 @@ void procdlcSerial() {
       // display 3 // trip computer
       // S000  A000  T000
       // T00:00:00 D000.0
-      // 00:00:00 D000000
 
       lcd.setCursor(0,0);
       lcd.print("S");
@@ -992,7 +999,7 @@ void procButtons() {
   }
 }
 
-void pushPinHi(byte pin, unsigned char delayms)
+void pushPinHi(byte pin, unsigned int delayms)
 {
   digitalWrite(pin, HIGH);
   delay(delayms);
