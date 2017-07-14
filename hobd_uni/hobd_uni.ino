@@ -768,7 +768,8 @@ void procdlcSerial() {
           else if (data[i+2] & 0xf) {
             errnum = (i*2)+1;
             // haxx
-            if (i>10) errnum = i*2;
+            if (errnum == 23) errnum = 22;
+            if (errnum == 24) errnum = 23;
             if (errnum < 10) { lcd.print("0"); }
             lcd.print(errnum);
             lcd.print(" ");
