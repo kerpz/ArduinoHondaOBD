@@ -768,7 +768,11 @@ void procdlcSerial() {
             lcd.print(" ");
             errcnt++;
           }   
-          else if (data[i+2] & 0xf) {
+          if (errcnt == 5) {
+            lcd.print("+");
+            lcd.setCursor(0,1);
+          }
+          if (data[i+2] & 0xf) {
             errnum = (i*2)+1;
             // haxx
             if (errnum == 23) errnum = 22;
@@ -778,12 +782,8 @@ void procdlcSerial() {
             lcd.print(" ");
             errcnt++;
           }
-          if (errcnt > 5) {
-            lcd.print(" ");
-            lcd.setCursor(0,1);
-          }
-          if (errcnt > 10) {
-            lcd.print(" ");
+          if (errcnt == 10) {
+            lcd.print("+");
             break;
           }
         }
@@ -824,13 +824,13 @@ void procdlcSerial() {
         lcd.print("                ");
       }
       else {
-        for (i=errcnt; i<10; i++) {
-          if (i > 5) {
-            lcd.print(" ");
+        for (i=errcnt; i<14; i++) {
+          if (i == 5) {
+            lcd.print("-");
             lcd.setCursor(0,1);
           }
-          if (i > 10) {
-            lcd.print(" ");
+          if (i == 10) {
+            lcd.print("-");
             break;
           }
           lcd.print("   ");
