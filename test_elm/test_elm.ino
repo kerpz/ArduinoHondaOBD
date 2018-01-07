@@ -23,9 +23,12 @@
 
 */
 
-#include <SoftwareSerial.h>
+//#include <SoftwareSerial.h>
+//SoftwareSerial btSerial(10, 11); // RX, TX
 
-SoftwareSerial btSerial(10, 11); // RX, TX
+#include <SoftwareSerialWithHalfDuplex.h>
+SoftwareSerialWithHalfDuplex btSerial(10, 11); // RX, TX
+
 
 bool elm_mode = false;
 bool elm_memory = false;
@@ -34,6 +37,7 @@ bool elm_space = true;
 bool elm_linefeed = true;
 bool elm_header = false;
 int  elm_protocol = 0; // auto
+
 
 void bt_write(char *str) {
   char c = *str;
@@ -51,7 +55,7 @@ void procbtSerial(void) {
     while (btSerial.available()) {
       btdata1[i] = toupper(btSerial.read());
       
-      //Serial.print(btdata1[i]); // debug
+      Serial.print(btdata1[i]); // debug
       
       if (btdata1[i] == '\r') { // terminate at \r
         btdata1[i] = '\0';
@@ -251,7 +255,14 @@ void setup()
   Serial.begin(115200); // for debugging
   
   btSerial.begin(38400); // if cmd is set high before power on
-  //btSerial.begin(9600); // if cmd is set high after power on
+
+  //btSerial.begin(9600);
+  //delay(500);
+  //btSerial.println("AT+NAME=HOBD");
+  //delay(500);
+  //btSerial.println("AT+UART=9600,0,0");
+  //delay(500);
+  //btSerial.println("AT+PSWD=8888");
 }
 
 void loop() {

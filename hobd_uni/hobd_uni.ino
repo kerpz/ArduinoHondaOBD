@@ -58,7 +58,7 @@
 
 #include <EEPROM.h>
 
-//#define LCD_i2c TRUE // Using LCD 16x2 I2C mode
+#define LCD_i2c TRUE // Using LCD 16x2 I2C mode
 
 #if defined(LCD_i2c)
 #include <LiquidCrystal_I2C.h>
@@ -80,7 +80,6 @@ LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 SoftwareSerialWithHalfDuplex btSerial(10, 11); // RX, TX
 SoftwareSerialWithHalfDuplex dlcSerial(12, 12, false, false);
 
-
 bool elm_mode = false;
 bool elm_memory = false;
 bool elm_echo = false;
@@ -95,7 +94,8 @@ byte pag_select = 0; // lcd page
 byte ect_alarm = 98; // celcius
 byte vss_alarm = 100; // kph
 
-//unsigned long error_timeout = 0, error_checksum = 0;
+//unsigned long err_timeout = 0, err_checksum = 0, ect_cnt = 0, vss_cnt = 0;
+
 
 void serial_debug(byte data[]) {
   // debug
@@ -159,7 +159,7 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
   }
 
   if (i < (len+3)) { // timeout
-    //error_timeout++;
+    //err_timeout++;
     return 0;  // data error
   }
   // checksum
@@ -169,7 +169,7 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
   }
   crc = 0xFF - (crc - 1);
   if (crc != data[len+2]) { // checksum failed
-    //error_checksum++;
+    //err_checksum++;
     return 0; // data error
   }
   return 1; // success
@@ -1015,6 +1015,7 @@ void setup()
 
   //Serial.begin(115200); // For debugging
   btSerial.begin(9600);
+  //btSerial.begin(38400);
   dlcSerial.begin(9600);
 
 #if defined(LCD_i2c)
