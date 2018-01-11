@@ -94,7 +94,7 @@ byte pag_select = 0; // lcd page
 byte ect_alarm = 98; // celcius
 byte vss_alarm = 100; // kph
 
-//unsigned long err_timeout = 0, err_checksum = 0, ect_cnt = 0, vss_cnt = 0;
+unsigned long err_timeout = 0, err_checksum = 0, ect_cnt = 0, vss_cnt = 0;
 
 
 void serial_debug(byte data[]) {
@@ -159,7 +159,7 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
   }
 
   if (i < (len+3)) { // timeout
-    //err_timeout++;
+    err_timeout++;
     return 0;  // data error
   }
   // checksum
@@ -169,7 +169,7 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len, byte data[]) {
   }
   crc = 0xFF - (crc - 1);
   if (crc != data[len+2]) { // checksum failed
-    //err_checksum++;
+    err_checksum++;
     return 0; // data error
   }
   return 1; // success
@@ -945,6 +945,22 @@ void procdlcSerial() {
       71–74 P1300 Multiple Cylinder Misfire Detected
       */
     }
+    else if (pag_select == 4) {
+      // display 4
+      // CS99999  TO99999
+      // EV12.0
+    
+      lcd.setCursor(0,0);
+      lcd.print("CS");
+      lcdZeroPaddedPrint(err_checksum, 5);
+      lcd.print("  TO");
+      lcdZeroPaddedPrint(err_timeout, 5);
+
+      lcd.setCursor(0,1);
+      lcd.print("EV");
+      lcdZeroPaddedPrint(volt, 3, true);
+      lcd.print("          ");
+    }
   }
 }  
 
@@ -969,7 +985,7 @@ void procButtons() {
       }
       else if (millis() - buttonsTick >= 5) { // short press 5 ms
         pag_select++;
-        if (pag_select > 3) {
+        if (pag_select > 4) {
           pag_select = 0;
         }
         //EEPROM.write(1, pag_select);
@@ -1014,8 +1030,8 @@ void setup()
   //pinMode(19, OUTPUT); // Door unlock
 
   //Serial.begin(115200); // For debugging
-  btSerial.begin(9600);
-  //btSerial.begin(38400);
+  //btSerial.begin(9600);
+  btSerial.begin(38400);
   dlcSerial.begin(9600);
 
 #if defined(LCD_i2c)

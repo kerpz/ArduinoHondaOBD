@@ -129,8 +129,11 @@ void procbtSerial(void) {
           // request dtc
           // do scan then report the errors
           // 43 01 33 00 00 00 00 = P0133
-          //sprintf_P(btdata2, PSTR("43 01 33 00 00 00 00\r\n>"), a);
-          //sprintf_P(btdata2, PSTR("OK\r\n>"));
+          //sprintf_P(btdata2, PSTR("SEARCHING...\r\n"));
+          //sprintf_P(btdata2, PSTR("UNABLE TO CONNECT\r\n>"));
+          sprintf_P(btdata2, PSTR("43 01 33 00 00 00 00\r\n>"));
+          sprintf_P(btdata2, PSTR("OK\r\n>"));
+          Serial.println("HIT");
         }
         else if (len <= 5 && btdata1[0] == '0' && btdata1[1] == '1') { // mode 01
           // multi pid 010C0B0D040E05
@@ -254,7 +257,7 @@ void setup()
 {
   Serial.begin(115200); // for debugging
   
-  btSerial.begin(38400); // if cmd is set high before power on
+  btSerial.begin(9600); // if cmd is set high before power on
 
   //btSerial.begin(9600);
   //delay(500);
