@@ -263,6 +263,9 @@ void procbtSerial() {
   
     while (btSerial.available()) {
       btdata1[i] = toupper(btSerial.read());
+      
+      delay(1); // this is required
+      
       if (btdata1[i] == '\r') { // terminate at \r
         btdata1[i] = '\0';
   
@@ -685,7 +688,7 @@ void procdlcSerial() {
       lcd.print(" S");
       lcdZeroPaddedPrint(vss, 3);
       lcd.print(" V");
-      lcdZeroPaddedPrint(volt2, 3, true);
+      lcdZeroPaddedPrint(volt, 3, true);
     
       lcd.setCursor(0,1);
       lcd.print("E");
@@ -695,7 +698,13 @@ void procdlcSerial() {
       lcd.print(" M");
       lcdZeroPaddedPrint(maps, 3);
       lcd.print(" T");
-      lcdZeroPaddedPrint(tps, 2);
+      if (tps < 0) {
+        lcd.print("-");
+        lcdZeroPaddedPrint(tps, 1);
+      }
+      else {
+        lcdZeroPaddedPrint(tps, 2);
+      }
     }
     else if (pag_select == 1) {
       // display 2
@@ -958,7 +967,7 @@ void procdlcSerial() {
 
       lcd.setCursor(0,1);
       lcd.print("EV");
-      lcdZeroPaddedPrint(volt, 3, true);
+      lcdZeroPaddedPrint(volt2, 3, true);
       lcd.print("          ");
     }
   }
@@ -1030,8 +1039,8 @@ void setup()
   //pinMode(19, OUTPUT); // Door unlock
 
   //Serial.begin(115200); // For debugging
-  //btSerial.begin(9600);
-  btSerial.begin(38400);
+  btSerial.begin(9600);
+  //btSerial.begin(38400);
   dlcSerial.begin(9600);
 
 #if defined(LCD_i2c)
@@ -1098,4 +1107,3 @@ void loop() {
     procdlcSerial();
   }
 }
-

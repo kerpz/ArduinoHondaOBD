@@ -55,7 +55,7 @@ void procbtSerial(void) {
     while (btSerial.available()) {
       btdata1[i] = toupper(btSerial.read());
       
-      Serial.print(btdata1[i]); // debug
+      delay(1); // this is required
       
       if (btdata1[i] == '\r') { // terminate at \r
         btdata1[i] = '\0';
@@ -257,7 +257,8 @@ void setup()
 {
   Serial.begin(115200); // for debugging
   
-  btSerial.begin(9600); // if cmd is set high before power on
+  btSerial.begin(9600); // HC-05 Test
+  //btSerial.begin(38400); // HC-06 Test
 
   //btSerial.begin(9600);
   //delay(500);
@@ -273,4 +274,3 @@ void loop() {
     procbtSerial();
   }
 }
-
