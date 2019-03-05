@@ -572,7 +572,7 @@ void procdlcSerial() {
     //byte h_cmd2[6] = {0x20,0x05,0x10,0x10,0xbb}; // row 2
     //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
     //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
-    static int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,afr=0,volt=0,fp=0,imap=0, sft=0,lft=0,inj=0,ign=0,lmt=0,iac=0, knoc=0;
+    static int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,afr=0,volt=0,volt2=0,fp=0,imap=0, sft=0,lft=0,inj=0,ign=0,lmt=0,iac=0, knoc=0;
 
     static unsigned long vsssum=0,running_time=0,idle_time=0,distance=0;
     static byte vss=0,vsstop=0,vssavg=0;
@@ -971,13 +971,18 @@ void procdlcSerial() {
     }
     else if (pag_select == 4) {
       // display 4
-      // CS99999  TO99999
-      // EV12.0
+      // C999 T999  V00.0
       // AFR14.7  FP035.0
 
       long vcc;
       float f;
-      
+
+      vcc = readVcc(); // in mV
+      f = (analogRead(A0) / 1024.0) * vcc; // mV
+      f /= 1000; // V
+      f = f / (R2/(R1+R2)); // voltage divider
+      volt2 = round(f * 10); // x10 for display w/ 1 decimal
+
       // air fuel ratio, x=afr(10-20), y=volts(0-5)
       // y = mx + b // slope intercept
       // x = (y - b) / m // derived for x
@@ -989,9 +994,9 @@ void procdlcSerial() {
       // m = slope
       // b = y intercept
       // x = afr
-      
+
       // x = (y + 5) / 0.5
-      
+
       vcc = readVcc(); // in mV
       f = (analogRead(A1) / 1024.0) * vcc; // mV
       f /= 1000; // V
@@ -1011,24 +1016,23 @@ void procdlcSerial() {
       // x = psi
 
       // x = (y - 0.5) / 0.04
-      
-      
+
       vcc = readVcc(); // in mV
       f = (analogRead(A2) / 1024.0) * vcc; // mV
       f /= 1000; // V
       f = (f - 0.5) / 0.04; // psi
       fp = round(f * 10); // x10 for display w/ 1 decimal
-    
+
+
       lcd.setCursor(0,0);
-      lcd.print("CS");
-      lcdZeroPaddedPrint(err_checksum, 5);
-      lcd.print("  TO");
-      lcdZeroPaddedPrint(err_timeout, 5);
+      lcd.print("C");
+      lcdZeroPaddedPrint(err_checksum, 3);
+      lcd.print(" T");
+      lcdZeroPaddedPrint(err_timeout, 3);
+      lcd.print("  V");
+      lcdZeroPaddedPrint(volt2, 3, true);
 
       lcd.setCursor(0,1);
-      //lcd.print("EV");
-      //lcdZeroPaddedPrint(volt2, 3, true);
-      //lcd.print("          ");
       lcd.print("AFR");
       lcdZeroPaddedPrint(afr, 3, true);
       lcd.print("  FP");
