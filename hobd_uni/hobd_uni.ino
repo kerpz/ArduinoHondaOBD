@@ -689,7 +689,7 @@ void procdlcSerial() {
       // display 1
       // R0000 S000 V00.0
       // E00 I00 M000 T00
-    
+
       lcd.setCursor(0,0);
       lcd.print("R");
       lcdZeroPaddedPrint(rpm, 4);
@@ -697,7 +697,7 @@ void procdlcSerial() {
       lcdZeroPaddedPrint(vss, 3);
       lcd.print(" V");
       lcdZeroPaddedPrint(volt, 3, true);
-    
+
       lcd.setCursor(0,1);
       lcd.print("E");
       lcdZeroPaddedPrint(ect, 2);
