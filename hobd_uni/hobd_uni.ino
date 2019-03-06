@@ -9,18 +9,9 @@
  - Tact switch
  - Piezo Buzzer
  - LCD 16x2 and 10k Potentiometer
-
-100 psi
-Input: 0-100 psi
-Output: 0.5V~4.5V linear voltage output. 0 psi outputs 0.5V, 50 psi outputs 2.5V, 100 psi outputs 4.5V.
-Accuracy: within 2% of reading (full scale).
-Thread: 1/8"-27 NPT
-Wiring Connector: Water sealed quick disconnect. Mating connector and wire harness (pigtail) is included.
-Wiring: Red for +5V; Black for ground; Blue for signal output.
-
-AEM AFR
-
-
+ Optional:
+ - 100 psi transducer for fuel pressure (0.5v - 4.5v)
+ - AEM AFR UEGO
 
  Software:
  - Arduino 1.6.9
@@ -91,6 +82,7 @@ LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 
 SoftwareSerialWithHalfDuplex btSerial(10, 11); // RX, TX
 SoftwareSerialWithHalfDuplex dlcSerial(12, 12, false, false);
+//SoftwareSerialWithHalfDuplex aemSerial(2, 2, false, false);
 
 bool elm_mode = false;
 bool elm_memory = false;
@@ -974,12 +966,10 @@ void procdlcSerial() {
       // C999 T999  V00.0
       // AFR14.7  FP035.0
 
-      long vcc;
       float f;
 
-      vcc = readVcc(); // in mV
-      f = (analogRead(A0) / 1024.0) * vcc; // mV
-      f /= 1000; // V
+      f = readVcc() / 1000; // V read from ref. or 5.0
+      f = (analogRead(A0) * f) / 1024.0; // V
       f = f / (R2/(R1+R2)); // voltage divider
       volt2 = round(f * 10); // x10 for display w/ 1 decimal
 
@@ -997,9 +987,8 @@ void procdlcSerial() {
 
       // x = (y + 5) / 0.5
 
-      vcc = readVcc(); // in mV
-      f = (analogRead(A1) / 1024.0) * vcc; // mV
-      f /= 1000; // V
+      f = readVcc() / 1000; // V read from ref. or 5.0
+      f = (analogRead(A0) * f) / 1024.0; // V
       f = (f + 5) / 0.5; // afr
       afr = round(f * 10); // x10 for display w/ 1 decimal
 
@@ -1017,9 +1006,8 @@ void procdlcSerial() {
 
       // x = (y - 0.5) / 0.04
 
-      vcc = readVcc(); // in mV
-      f = (analogRead(A2) / 1024.0) * vcc; // mV
-      f /= 1000; // V
+      f = readVcc() / 1000; // V read from ref. or 5.0
+      f = (analogRead(A0) * f) / 1024.0; // V
       f = (f - 0.5) / 0.04; // psi
       fp = round(f * 10); // x10 for display w/ 1 decimal
 
