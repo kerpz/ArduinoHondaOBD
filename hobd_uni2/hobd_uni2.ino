@@ -275,7 +275,7 @@ void procbtSerial() {
           byte v1 = 0, v2 = 0;
           //unsigned int volt2 = round(readVoltageDivider(14) * 10); // to cV
           long vcc = readVcc(); // in mV
-          unsigned int volt2 = round((((analogRead(A0) * vcc) / 1024.0) / (R2/(R1+R2))) * 10);
+          unsigned int volt2 = round((((analogRead(PIN_VOLT) * vcc) / 1024.0) / (R2/(R1+R2))) * 10);
           v1 = volt2 / 10;
           v2 = volt2 % 10;
           sprintf_P(btdata2, PSTR("%d.%dV\r\n>"), v1, v2);
@@ -870,8 +870,8 @@ void procdlcSerial() {
     }
 
     // critical ect value or speed limit, alarm on
-    if (ect > ect_alarm || vss > vss_alarm) { digitalWrite(13, HIGH); }
-    else { digitalWrite(13, LOW); }
+    if (ect > ect_alarm || vss > vss_alarm) { digitalWrite(PIN_BUZZER, HIGH); }
+    else { digitalWrite(PIN_BUZZER, LOW); }
 
     procLCD();
   }
