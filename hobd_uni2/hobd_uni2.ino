@@ -46,8 +46,8 @@
  - 13 = Piezo buzzer (+)
 
  - 14 = (A0) Voltage divider (Input Signal)
- - 15 = (A1) AEM AFR UEGO / VSS (Input Signal)
- - 16 = (A2) 100 PSI Fuel Pressure / Door Input
+ - 15 = (A1) 100 PSI Fuel Pressure / VSS (Input Signal)
+ - 16 = (A2) AEM AFR UEGO / Door Input
  - 17 = (A3) Navigation Button
  - 18 = (A4) I2C
  - 19 = (A5) I2C
@@ -62,6 +62,12 @@
 #include <EEPROM.h>
 
 #define LCD_i2c TRUE // Using LCD 16x2 I2C mode
+
+#define PIN_BUZZER 13
+#define PIN_BUTTON 9
+#define PIN_VOLT 14
+#define PIN_AFR 17
+#define PIN_FP 15
 
 #if defined(LCD_i2c)
 #include <LiquidCrystal_I2C.h>
@@ -688,7 +694,7 @@ void procLCD(void) {
     float f;
 
     f = readVcc() / 1000; // V read from ref. or 5.0
-    f = (analogRead(A0) * f) / 1024.0; // V
+    f = (analogRead(PIN_VOLT) * f) / 1024.0; // V
     f = f / (R2/(R1+R2)); // voltage divider
     volt2 = round(f * 10); // x10 for display w/ 1 decimal
 
@@ -707,8 +713,9 @@ void procLCD(void) {
     // x = (y + 5) / 0.5
 
     f = readVcc() / 1000; // V read from ref. or 5.0
-    f = (analogRead(A0) * f) / 1024.0; // V
-    f = (f + 5) / 0.5; // afr
+    f = (analogRead(PIN_AFR) * f) / 1024.0; // V
+    //f = (f + 5) / 0.5; // afr
+    f = 2 * f + 10;
     afr = round(f * 10); // x10 for display w/ 1 decimal
 
     // fuel pressure, x=psi(0-100), y=volts(0.5-4.5)
@@ -726,7 +733,7 @@ void procLCD(void) {
     // x = (y - 0.5) / 0.04
 
     f = readVcc() / 1000; // V read from ref. or 5.0
-    f = (analogRead(A0) * f) / 1024.0; // V
+    f = (analogRead(PIN_FP) * f) / 1024.0; // V
     f = (f - 0.5) / 0.04; // psi
     fp = round(f * 10); // x10 for display w/ 1 decimal
 
@@ -881,7 +888,7 @@ void procButtons() {
   static unsigned long buttonsTick = 0;
   static int button_press_old = HIGH;
 
-  int button_press_new = digitalRead(17);
+  int button_press_new = digitalRead(PIN_BUTTON);
 
   if (button_press_new != button_press_old) { // change state
     if (button_press_new == HIGH) { // on released
@@ -915,23 +922,26 @@ void procButtons() {
 
   if (button_press_new == LOW) { // while pressed
     if (millis() - buttonsTick == 5) { // beep @ 5 ms
-      pushPinHi(13, 50); // beep 50ms
+      pushPinHi(PIN_BUZZER, 50); // beep 50ms
     }
     else if (millis() - buttonsTick == 3000) { // beep @  3 secs
-      pushPinHi(13, 50); // beep 50ms
+      pushPinHi(PIN_BUZZER, 50); // beep 50ms
     }
     else if (millis() - buttonsTick == 5000) { // beep @  5 secs
-      pushPinHi(13, 50); // beep 50ms
+      pushPinHi(PIN_BUZZER, 50); // beep 50ms
     }
   }
 }
 
 void setup()
 {
-  pinMode(13, OUTPUT); // Piezo Buzzer
+  pinMode(PIN_BUZZER, OUTPUT); // Piezo Buzzer
 
-  pinMode(17, INPUT); // Button
-  digitalWrite(17, HIGH); // Configure internal pull-up resistor
+  pinMode(PIN_BUTTON, INPUT); // Button
+  pinMode(PIN_BUTTON, INPUT_PULLUP);
+  pinMode(PIN_VOLT, INPUT); // Volt meter
+  pinMode(PIN_AFR, INPUT); // AEM UEGO AFR
+  pinMode(PIN_FP, INPUT); // 100psi Fuel Pressure
 
   //Serial.begin(115200); // For debugging
   btSerial.begin(9600);
@@ -947,7 +957,7 @@ void setup()
 
   // initial beep
   for (int i=0; i<3; i++) {
-    pushPinHi(13, 50); // beep 50ms
+    pushPinHi(PIN_BUZZER, 50); // beep 50ms
     delay(80);
   }
 
