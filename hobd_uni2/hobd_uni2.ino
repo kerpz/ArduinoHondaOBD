@@ -714,8 +714,8 @@ void procLCD(void) {
 
     f = readVcc() / 1000; // V read from ref. or 5.0
     f = (analogRead(PIN_AFR) * f) / 1024.0; // V
-    //f = (f + 5) / 0.5; // afr
-    f = 2 * f + 10;
+    f = (f + 5) / 0.5; // afr
+    //f = 2 * f + 10;
     afr = round(f * 10); // x10 for display w/ 1 decimal
 
     // fuel pressure, x=psi(0-100), y=volts(0.5-4.5)
