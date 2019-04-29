@@ -32,14 +32,14 @@
 
  - 00 = Serial RX
  - 01 = Serial TX
- - 02 = Injector Input
- - 03 = Injector Input
- - 04 = LCD D7
- - 05 = LCD D6
- - 06 = LCD D5
- - 07 = LCD D4
- - 08 = LCD EN
- - 09 = LCD RS
+ - 02 = Open / Injector Input
+ - 03 = Open / Injector Input
+ - 04 = Open / LCD D7
+ - 05 = Open / LCD D6
+ - 06 = Open / LCD D5
+ - 07 = Open / LCD D4
+ - 08 = Open / LCD EN
+ - 09 = Open / LCD RS
  - 10 = Bluetooth RX
  - 11 = Bluetooth TX
  - 12 = K-Line
@@ -48,7 +48,7 @@
  - 14 = (A0) Voltage divider (Input Signal)
  - 15 = (A1) 100 PSI Fuel Pressure / VSS (Input Signal)
  - 16 = (A2) AEM AFR UEGO / Door Input
- - 17 = (A3) Navigation Button
+ - 17 = (A3) Thermistor / Navigation Button
  - 18 = (A4) I2C
  - 19 = (A5) I2C
 
@@ -66,8 +66,9 @@
 #define PIN_BUZZER 13
 #define PIN_BUTTON 9
 #define PIN_VOLT 14
-#define PIN_AFR 17
 #define PIN_FP 15
+#define PIN_AFR 16
+#define PIN_TH 17
 
 #if defined(LCD_i2c)
 #include <LiquidCrystal_I2C.h>
@@ -98,7 +99,7 @@ bool elm_linefeed = true;
 bool elm_header = false;
 int  elm_protocol = 0; // auto
 
-int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,afr=0,volt=0,volt2=0,fp=0,imap=0, sft=0,lft=0,inj=0,ign=0,lmt=0,iac=0, knoc=0;
+int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,afr=0,volt=0,volt2=0,fp=0,imap=0, sft=0,lft=0,inj=0,ign=0,lmt=0,iac=0, knoc=0, th=25;
 
 unsigned long vsssum=0,running_time=0,idle_time=0,distance=0;
 byte vss=0,vsstop=0,vssavg=0;
@@ -108,6 +109,8 @@ byte pag_select = 0; // lcd page
 
 byte ect_alarm = 98; // celcius
 byte vss_alarm = 100; // kph
+byte ac_deactivate = 4; // celcius / + 2
+bool isCoolDown = false;
 
 bool isButtonPressed = false;
 
@@ -116,6 +119,7 @@ bool isButtonPressed = false;
 //float R2 = 7500.0;
 float R1 = 680000.0; // Resistance of R1 (680kohms)
 float R2 = 220000.0; // Resistance of R2 (220kohms)
+float R3 = 10000.0; // Thermistor divider
 
 unsigned long err_timeout = 0, err_checksum = 0, ect_cnt = 0, vss_cnt = 0;
 
@@ -165,6 +169,7 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len) {
   while (i < (len+3) && millis() < timeOut) {
     if (dlcSerial.available()) {
       dlcdata[i] = dlcSerial.read();
+      //delay(1); // this is required
       i++;
     }
   }
@@ -688,7 +693,7 @@ void procLCD(void) {
   }
   else if (pag_select == 4) {
     // display 4
-    // C999 T999  V00.0
+    // C9999 T999 V00.0
     // AFR14.7  FP035.0
 
     float f;
@@ -737,14 +742,27 @@ void procLCD(void) {
     f = (f - 0.5) / 0.04; // psi
     fp = round(f * 10); // x10 for display w/ 1 decimal
 
+    int b = 3950;
+    // th resistance
+    f = analogRead(PIN_TH);
+    f = (1023 / f)  - 1;
+    f = R3 / f;
+    // th steinhart;
+    f = f / 10000.0;            // (R/Ro)
+    f = log(f);                 // ln(R/Ro)
+    f /= b;                     // 1/B * ln(R/Ro)
+    f += 1.0 / (25 + 273.15);   // + (1/To)
+    f = 1.0 / f;                // Invert
+    f -= 273.15;                // convert to C
+    th = round(f * 10); // x10 for display w/ 1 decimal
 
     lcd.setCursor(0,0);
     lcd.print("C");
-    lcdZeroPaddedPrint(err_checksum, 3);
+    lcdZeroPaddedPrint(err_checksum, 4);
     lcd.print(" T");
     lcdZeroPaddedPrint(err_timeout, 3);
-    lcd.print("  V");
-    lcdZeroPaddedPrint(volt2, 3, true);
+    lcd.print(" C");
+    lcdZeroPaddedPrint(th, 3, true);
 
     lcd.setCursor(0,1);
     lcd.print("AFR");
@@ -942,6 +960,7 @@ void setup()
   pinMode(PIN_VOLT, INPUT); // Volt meter
   pinMode(PIN_AFR, INPUT); // AEM UEGO AFR
   pinMode(PIN_FP, INPUT); // 100psi Fuel Pressure
+  pinMode(PIN_TH, INPUT); // 10k Thermistor
 
   //Serial.begin(115200); // For debugging
   btSerial.begin(9600);
