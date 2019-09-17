@@ -69,6 +69,7 @@
 #define PIN_FP 15
 #define PIN_AFR 16
 #define PIN_TH 17
+#define PIN_COMPRESSOR 8
 
 #if defined(LCD_i2c)
 #include <LiquidCrystal_I2C.h>
@@ -111,8 +112,7 @@ byte pag_select = 0; // lcd page
 
 byte ect_alarm = 98; // celcius
 byte vss_alarm = 100; // kph
-byte ac_deactivate = 4; // celcius / + 2
-bool isCoolDown = false;
+byte th_threshold = 4; // celcius / + 10
 
 bool isButtonPressed = false;
 
@@ -944,6 +944,14 @@ void procdlcSerial() {
     if (ect > ect_alarm || vss > vss_alarm) { digitalWrite(PIN_BUZZER, HIGH); }
     else { digitalWrite(PIN_BUZZER, LOW); }
 
+    int th_threshold = 5;
+    if (th <= th_threshold) {
+      digitalWrite(PIN_COMPRESSOR, LOW);
+    }
+    else if (th >= (th_threshold + 10)) {
+      digitalWrite(PIN_COMPRESSOR, HIGH); 
+    }
+
     procLCD();
   }
 }
@@ -1034,14 +1042,16 @@ void setup()
   }
 
   if (EEPROM.read(0) == 0xff) { EEPROM.write(0, obd_select); }
-  //if (EEPROM.read(1) == 0xff) { EEPROM.write(0, pag_select); }
-  //if (EEPROM.read(2) == 0xff) { EEPROM.write(0, ect_alarm); }
-  //if (EEPROM.read(3) == 0xff) { EEPROM.write(0, vss_alarm); }
+  //if (EEPROM.read(1) == 0xff) { EEPROM.write(1, pag_select); }
+  //if (EEPROM.read(2) == 0xff) { EEPROM.write(2, ect_alarm); }
+  //if (EEPROM.read(3) == 0xff) { EEPROM.write(3, vss_alarm); }
+  //if (EEPROM.read(4) == 0xff) { EEPROM.write(4, th_threshold); }
 
   obd_select = EEPROM.read(0);
   //pag_select = EEPROM.read(1);
   //ect_alarm = EEPROM.read(2); // over heat ???
   //vss_alarm = EEPROM.read(3); // over speed ???
+  //th_threshold = EEPROM.read(4); // compressor cutoff
 
 
   dlcInit();
