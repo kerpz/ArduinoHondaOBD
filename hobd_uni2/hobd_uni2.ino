@@ -34,7 +34,7 @@
  - 01 = Serial TX
  - 02 = Open / Injector Input
  - 03 = Open / Injector Input
- - 04 = Open / LCD D7
+ - 04 = Open / LCD D7 / Button
  - 05 = Open / LCD D6
  - 06 = Open / LCD D5
  - 07 = Open / LCD D4
