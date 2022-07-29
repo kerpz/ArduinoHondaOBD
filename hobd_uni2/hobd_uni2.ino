@@ -3,18 +3,18 @@
  - Philip Bordado (kerpz@yahoo.com)
 
  Hardware:
- - Arduino UNO (Compatible board)
+ - Arduino Nano (Compatible board)
  - HC-05 Bluetooth module
  - Resistors 680k ohms and 220k ohms
- - Tact switch
  - Piezo Buzzer
- - LCD 16x2 and 10k Potentiometer
+ - LCD 16x2 I2C
  Optional:
  - 100 psi transducer for fuel pressure (0.5v - 4.5v)
  - AEM AFR UEGO
+ - 10K NTC Thermistor
 
  Software:
- - Arduino 1.8.7 (Stable)
+ - Arduino 1.8.19 (Stable)
  - SoftwareSerialWithHalfDuplex (Library)
    https://github.com/nickstedman/SoftwareSerialWithHalfDuplex
 
@@ -28,56 +28,54 @@
    http://www.lightner.net/obd2guru/IMAP_AFcalc.html
    http://www.installuniversity.com/install_university/installu_articles/volumetric_efficiency/ve_computation_9.012000.htm
 
- Arduino Pin Mapping:
-
+ Arduino Pin Mapping / Configuration:
+ * Pulse Input - 50k ohms over 5.1v zener
+ $ Switch Out - 1k ohms on NPN transistor (2n3904)
+ 
  - 00 = Serial RX
  - 01 = Serial TX
- - 02 = Open / Injector Input
- - 03 = Open / Injector Input
- - 04 = Open / LCD D7 / Button
- - 05 = Open / LCD D6
- - 06 = Open / LCD D5
- - 07 = Open / LCD D4
- - 08 = Open / LCD EN
- - 09 = Open / LCD RS
+ - 02 = * Injector Input
+ - 03 = * Injector Input
+ - 04 = $ Door Lock | * RPM Input
+ - 05 = $ Door Unlock | * VSS Input
+ - 06 = $ AC Compressor
+ - 07 = 
+ - 08 = * Door Sensor
+ - 09 = AEM AFR UEGO (Serial In)
  - 10 = Bluetooth RX
  - 11 = Bluetooth TX
- - 12 = K-Line
+ - 12 = K-Line (Serial In)
  - 13 = Piezo buzzer (+)
 
  - 14 = (A0) Voltage divider (Input Signal)
- - 15 = (A1) 100 PSI Fuel Pressure / VSS (Input Signal)
- - 16 = (A2) AEM AFR UEGO / Door Input
- - 17 = (A3) Thermistor / Navigation Button
- - 18 = (A4) I2C
- - 19 = (A5) I2C
-
- Potentiometer
- - END = 5V
- - MID = LCD VO
- - END = GND
-
+ - 15 = (A1) 100 PSI Fuel Pressure
+ - 16 = (A2) AEM AFR UEGO (ADC)
+ - 17 = (A3) NTC Thermistor
+ - 18 = (A4) I2C / LCD I2C
+ - 19 = (A5) I2C / LCD I2C
+ - 20 = (A6) Navigation Button (reason: multiple button using resistors)
+ - 21 = (A7)
 */
+
+#define APPNAME "Honda Plus v1.0"
 
 #include <EEPROM.h>
 
-#define LCD_i2c TRUE // Using LCD 16x2 I2C mode
-
+// OUT
+#define PIN_LOCK 4
+#define PIN_UNLOCK 5
+#define PIN_AC 6
 #define PIN_BUZZER 13
-#define PIN_BUTTON 9
+// IN
+#define PIN_DOOR 8
 #define PIN_VOLT 14
 #define PIN_FP 15
 #define PIN_AFR 16
 #define PIN_TH 17
-#define PIN_COMPRESSOR 8
+#define PIN_BUTTON 20
 
-#if defined(LCD_i2c)
 #include <LiquidCrystal_I2C.h>
 LiquidCrystal_I2C lcd(0x3f, 2, 1, 0, 4, 5, 6, 7);
-#else
-#include <LiquidCrystal.h>
-LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
-#endif
 
 // comment the PCINT1_vect,PCINT2_vect,PCINT3_vect handle in softserial library
 // since we are just using D10,D11,D12 and we want to handle interrupts @ A0 - A5
@@ -90,7 +88,7 @@ LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 
 SoftwareSerialWithHalfDuplex btSerial(10, 11); // RX, TX
 SoftwareSerialWithHalfDuplex dlcSerial(12, 12, false, false);
-//SoftwareSerialWithHalfDuplex aemSerial(2, 2, false, false);
+//SoftwareSerialWithHalfDuplex aemSerial(9, 9, false, false);
 
 bool elm_mode = false;
 bool elm_memory = false;
@@ -219,6 +217,7 @@ long readVcc()
   return vcc;
 }
 
+// bluetooth routines
 void procbtSerial() {
     char btdata1[20]={0};  // bt data in buffer
     char btdata2[20]={0};  // bt data out buffer
@@ -241,14 +240,14 @@ void procbtSerial() {
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (!strcmp(btdata1, "ATI")) { // print id / general
-          sprintf_P(btdata2, PSTR("Honda OBD v1.0\r\n>"));
+          sprintf_P(btdata2, "%s\r\n>", APPNAME);
         }
         else if (!strcmp(btdata1, "ATZ")) { // reset all / general
           elm_echo = false;
           elm_space = true;
           elm_linefeed = true;
           elm_header = false;
-          sprintf_P(btdata2, PSTR("Honda OBD v1.0\r\n>"));
+          sprintf_P(btdata2, "%s\r\n>", APPNAME);
         }
         else if (len == 4 && strstr(btdata1, "ATE")) { // echo on/off / general
           elm_echo = (btdata1[3] == '1' ? true : false);
@@ -557,6 +556,7 @@ void lcdSecondsToTimePrint(unsigned long i) {
   lcdZeroPaddedPrint(numberOfSeconds(i), 2);
 }
 
+// display routines (2x16 LCD)
 void procLCD(void) {
   //lcd.clear();
   if (pag_select == 0) {
@@ -946,10 +946,10 @@ void procdlcSerial() {
 
     int th_threshold = 5;
     if (th <= th_threshold) {
-      digitalWrite(PIN_COMPRESSOR, LOW);
+      digitalWrite(PIN_AC, LOW);
     }
     else if (th >= (th_threshold + 10)) {
-      digitalWrite(PIN_COMPRESSOR, HIGH); 
+      digitalWrite(PIN_AC, HIGH); 
     }
 
     procLCD();
@@ -1014,24 +1014,25 @@ void procButtons() {
 
 void setup()
 {
+  pinMode(PIN_AC, OUTPUT); // Air Condition
   pinMode(PIN_BUZZER, OUTPUT); // Piezo Buzzer
 
+  pinMode(PIN_DOOR, INPUT); // Door
   pinMode(PIN_BUTTON, INPUT); // Button
-  pinMode(PIN_BUTTON, INPUT_PULLUP);
   pinMode(PIN_VOLT, INPUT); // Volt meter
-  pinMode(PIN_AFR, INPUT); // AEM UEGO AFR
   pinMode(PIN_FP, INPUT); // 100psi Fuel Pressure
+  pinMode(PIN_AFR, INPUT); // AEM UEGO AFR
   pinMode(PIN_TH, INPUT); // 10k Thermistor
+  pinMode(PIN_BUTTON, INPUT_PULLUP);
 
   //Serial.begin(115200); // For debugging
   btSerial.begin(9600);
   //btSerial.begin(38400);
   dlcSerial.begin(9600);
 
-#if defined(LCD_i2c)
+  // LCD I2C init
   lcd.setBacklightPin(3, POSITIVE);
   lcd.setBacklight(HIGH); // NOTE: You can turn the backlight off by setting it to LOW instead of HIGH
-#endif
 
   lcd.begin(16, 2); // sets the LCD's rows and colums:
 
@@ -1058,7 +1059,7 @@ void setup()
 
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print(" Honda OBD v1.0");
+  lcd.print(APPNAME);
   lcd.setCursor(0,1);
   lcd.print(" ECU Type: OBD");
   lcd.print(obd_select);
