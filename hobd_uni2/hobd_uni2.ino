@@ -18,9 +18,6 @@
  - SoftwareSerialWithHalfDuplex (Library)
    https://github.com/nickstedman/SoftwareSerialWithHalfDuplex
 
- - NewLiquidCrystal (Library) 1.3.4
-   https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads/
-
  Formula:
  - IMAP = RPM * MAP / IAT / 2
  - MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
@@ -57,7 +54,7 @@
  - 21 = (A7)
 */
 
-#define APPNAME "Honda Plus v1.0"
+#define APPNAME "Honda UNI   v1.0" // 16 chars
 
 #include <EEPROM.h>
 
@@ -75,7 +72,7 @@
 #define PIN_BUTTON 20
 
 #include <LiquidCrystal_I2C.h>
-LiquidCrystal_I2C lcd(0x3f, 2, 1, 0, 4, 5, 6, 7);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // comment the PCINT1_vect,PCINT2_vect,PCINT3_vect handle in softserial library
 // since we are just using D10,D11,D12 and we want to handle interrupts @ A0 - A5
@@ -98,14 +95,18 @@ bool elm_linefeed = true;
 bool elm_header = false;
 byte elm_protocol = 0; // auto
 
-int rpm=0,ect=0,iat=0,maps=0,baro=0,tps=0,afr=0,volt=0,volt2=0,fp=0,imap=0, sft=0,lft=0,inj=0,ign=0,lmt=0,iac=0, knoc=0, th=25;
+// ecu data
+int rpm=0, ect=0, iat=0,maps=0, baro=0, tps=0, volt=0, imap=0, sft=0, lft=0, inj=0, ign=0, lmt=0, iac=0, knoc=0;
+// extra sensor data
+int volt2=0, afr=0, fp=0, th=25;
+
 int rpmtop=0,volttop=0,mapstop=0,tpstop=0,ecttop=0,iattop=0;
 
 unsigned long vsssum=0,running_time=0,idle_time=0,distance=0;
 byte vss=0,vsstop=0,vssavg=0;
 
 
-byte obd_select = 1; // 1 = obd1, 2 = obd2
+byte obd_select = 2; // 1 = obd1, 2 = obd2
 byte pag_select = 0; // lcd page
 
 byte ect_alarm = 98; // celcius
@@ -557,278 +558,287 @@ void lcdSecondsToTimePrint(unsigned long i) {
 }
 
 // display routines (2x16 LCD)
-void procLCD(void) {
-  //lcd.clear();
-  if (pag_select == 0) {
-    // display 1
-    // R0000 S000 V00.0
-    // E00 I00 M000 T00
+void procDisplay(void) {
+  static unsigned long msTick = millis();
+  if (millis() - msTick >= 250) { // run every 250 ms
+    msTick = millis();
 
-    lcd.setCursor(0,0);
-    lcd.print("R");
-    lcdZeroPaddedPrint(rpm, 4);
-    lcd.print(" S");
-    lcdZeroPaddedPrint(vss, 3);
-    lcd.print(" V");
-    lcdZeroPaddedPrint(volt, 3, true);
-
-    lcd.setCursor(0,1);
-    lcd.print("E");
-    lcdZeroPaddedPrint(ect, 2);
-    lcd.print(" I");
-    lcdZeroPaddedPrint(iat, 2);
-    lcd.print(" M");
-    lcdZeroPaddedPrint(maps, 3);
-    lcd.print(" T");
-    if (tps < 0) {
-      lcd.print("-");
-      lcdZeroPaddedPrint(tps, 1);
-    }
-    else {
-      lcdZeroPaddedPrint(tps, 2);
-    }
-  }
-  else if (pag_select == 1) {
-    // display 2
-    // IGN+16.5 AFR14.7
-    // INJ00 IAC00 KNC0
-    // RPM0000   SPD000
-    // ECT000    IAT000
-    // MAP000    TPS000
-
-    lcd.setCursor(0,0);
-    lcd.print("IGN");
-    if (ign < 0) { lcd.print("-"); }
-    else { lcd.print("+"); }
-    //lcd.print(ign);
-    lcdZeroPaddedPrint(ign, 3, true);
-    lcd.print(" AFR");
-    lcdZeroPaddedPrint(afr, 3, true);
-
-    lcd.setCursor(0,1);
-    lcd.print("INJ");
-    lcdZeroPaddedPrint(inj, 2);
-    lcd.print(" IAC");
-    lcdZeroPaddedPrint(iac, 2);
-    lcd.print(" KNC");
-    lcdZeroPaddedPrint(knoc, 1);
-  }
-  else if (pag_select == 2) {
-    // display 3 // trip computer
-    // S000  A000  T000
-    // T00:00:00 D000.0
-
-    lcd.setCursor(0,0);
-    lcd.print("S");
-    lcdZeroPaddedPrint(vss, 3);
-    lcd.print("  A");
-    lcdZeroPaddedPrint(vssavg, 3);
-    lcd.print("  T");
-    lcdZeroPaddedPrint(vsstop, 3);
-
-    lcd.setCursor(0,1);
-    unsigned long total_time = (idle_time + running_time) / 4; // running time in second @ 250ms
-    lcd.print("T");
-    lcdSecondsToTimePrint(total_time);
-    lcd.print(" D");
-    unsigned int total_distance = distance / 100; // in 000.0km format
-    lcdZeroPaddedPrint(total_distance, 4, true);
-  }
-  else if (pag_select == 3) {
-    // display 3 // CEL/MIL codes
-    byte errnum, errcnt = 0, i;
-
-    //byte hbits = i >> 4;
-    //byte lbits = i & 0xf;
-
-    // display up to 10 error codes
-    // 00 00 00 00 00
-    // 00 00 00 00 00
-    lcd.setCursor(0,0);
-    if (dlcCommand(0x20,0x05,0x40,0x10)) { // row 1
-      for (i=0; i<14; i++) {
-        if (dlcdata[i+2] >> 4) {
-          errnum = i*2;
-          if (errnum < 10) { lcd.print("0"); }
-          lcd.print(errnum);
-          lcd.print(" ");
-          errcnt++;
-        }   
-        if (errcnt == 5) {
-          lcd.print("+");
-          lcd.setCursor(0,1);
-        }
-        if (dlcdata[i+2] & 0xf) {
-          errnum = (i*2)+1;
-          // haxx
-          if (errnum == 23) errnum = 22;
-          if (errnum == 24) errnum = 23;
-          if (errnum < 10) { lcd.print("0"); }
-          lcd.print(errnum);
-          lcd.print(" ");
-          errcnt++;
-        }
-        if (errcnt == 10) {
-          lcd.print("+");
-          break;
-        }
-      }
-    }
-    if (errcnt == 0) {
-      lcd.print("    NO ERROR    ");
+    //lcd.clear();
+    if (pag_select == 0) {
+      // display 1
+      // R0000 S000 V00.0
+      // E00 I00 M000 T00
+  
+      lcd.setCursor(0,0);
+      lcd.print("R");
+      lcdZeroPaddedPrint(rpm, 4);
+      lcd.print(" S");
+      lcdZeroPaddedPrint(vss, 3);
+      lcd.print(" V");
+      lcdZeroPaddedPrint(volt, 3, true);
+  
       lcd.setCursor(0,1);
-      lcd.print("                ");
-    }
-    else {
-      for (i=errcnt; i<14; i++) {
-        if (i == 5) {
-          lcd.print("-");
-          lcd.setCursor(0,1);
-        }
-        if (i == 10) {
-          lcd.print("-");
-          break;
-        }
-        lcd.print("   ");
+      lcd.print("E");
+      lcdZeroPaddedPrint(ect, 2);
+      lcd.print(" I");
+      lcdZeroPaddedPrint(iat, 2);
+      lcd.print(" M");
+      lcdZeroPaddedPrint(maps, 3);
+      lcd.print(" T");
+      if (tps < 0) {
+        lcd.print("-");
+        lcdZeroPaddedPrint(tps, 1);
+      }
+      else {
+        lcdZeroPaddedPrint(tps, 2);
       }
     }
-  }
-  else if (pag_select == 4) {
-    // display 4
-    // C9999 T999 V00.0
-    // AFR14.7  FP035.0
-
-    lcd.setCursor(0,0);
-    lcd.print("C");
-    lcdZeroPaddedPrint(err_checksum, 4);
-    lcd.print(" T");
-    lcdZeroPaddedPrint(err_timeout, 3);
-    lcd.print(" C");
-    lcdZeroPaddedPrint(th, 3, true);
-
-    lcd.setCursor(0,1);
-    lcd.print("AFR");
-    lcdZeroPaddedPrint(afr, 3, true);
-    lcd.print("  FP");
-    lcdZeroPaddedPrint(fp, 4, true);
-  }
-  else if (pag_select == 5) {
-    // Top Recorded
-    // R0000 S000 V00.0
-    // E00 I00 M000 T00
-    lcd.setCursor(0,0);
-    lcd.print("R");
-
-    lcdZeroPaddedPrint(rpmtop, 4);
-    lcd.print(" S");
-    lcdZeroPaddedPrint(vsstop, 3);
-    lcd.print(" V");
-    lcdZeroPaddedPrint(volttop, 3, true);
-
-    lcd.setCursor(0,1);
-    lcd.print("E");
-    lcdZeroPaddedPrint(ecttop, 2);
-    lcd.print(" I");
-    lcdZeroPaddedPrint(iattop, 2);
-    lcd.print(" M");
-    lcdZeroPaddedPrint(mapstop, 3);
-    lcd.print(" T");
-    if (tps < 0) {
-      lcd.print("-");
-      lcdZeroPaddedPrint(tpstop, 1);
+    else if (pag_select == 1) {
+      // display 2
+      // IGN+16.5 AFR14.7
+      // INJ00 IAC00 KNC0
+      // RPM0000   SPD000
+      // ECT000    IAT000
+      // MAP000    TPS000
+  
+      lcd.setCursor(0,0);
+      lcd.print("IGN");
+      if (ign < 0) { lcd.print("-"); }
+      else { lcd.print("+"); }
+      //lcd.print(ign);
+      lcdZeroPaddedPrint(ign, 3, true);
+      lcd.print(" AFR");
+      lcdZeroPaddedPrint(afr, 3, true);
+  
+      lcd.setCursor(0,1);
+      lcd.print("INJ");
+      lcdZeroPaddedPrint(inj, 2);
+      lcd.print(" IAC");
+      lcdZeroPaddedPrint(iac, 2);
+      lcd.print(" KNC");
+      lcdZeroPaddedPrint(knoc, 1);
     }
-    else {
-      lcdZeroPaddedPrint(tpstop, 2);
+    else if (pag_select == 2) {
+      // display 3 // trip computer
+      // S000  A000  T000
+      // T00:00:00 D000.0
+  
+      lcd.setCursor(0,0);
+      lcd.print("S");
+      lcdZeroPaddedPrint(vss, 3);
+      lcd.print("  A");
+      lcdZeroPaddedPrint(vssavg, 3);
+      lcd.print("  T");
+      lcdZeroPaddedPrint(vsstop, 3);
+  
+      lcd.setCursor(0,1);
+      unsigned long total_time = (idle_time + running_time) / 4; // running time in second @ 250ms
+      lcd.print("T");
+      lcdSecondsToTimePrint(total_time);
+      lcd.print(" D");
+      unsigned int total_distance = distance / 100; // in 000.0km format
+      lcdZeroPaddedPrint(total_distance, 4, true);
+    }
+    else if (pag_select == 3) {
+      // display 3 // CEL/MIL codes
+      byte errnum, errcnt = 0, i;
+  
+      //byte hbits = i >> 4;
+      //byte lbits = i & 0xf;
+  
+      // display up to 10 error codes
+      // 00 00 00 00 00
+      // 00 00 00 00 00
+      lcd.setCursor(0,0);
+      if (dlcCommand(0x20,0x05,0x40,0x10)) { // row 1
+        for (i=0; i<14; i++) {
+          if (dlcdata[i+2] >> 4) {
+            errnum = i*2;
+            if (errnum < 10) { lcd.print("0"); }
+            lcd.print(errnum);
+            lcd.print(" ");
+            errcnt++;
+          }   
+          if (errcnt == 5) {
+            lcd.print("+");
+            lcd.setCursor(0,1);
+          }
+          if (dlcdata[i+2] & 0xf) {
+            errnum = (i*2)+1;
+            // haxx
+            if (errnum == 23) errnum = 22;
+            if (errnum == 24) errnum = 23;
+            if (errnum < 10) { lcd.print("0"); }
+            lcd.print(errnum);
+            lcd.print(" ");
+            errcnt++;
+          }
+          if (errcnt == 10) {
+            lcd.print("+");
+            break;
+          }
+        }
+      }
+      if (errcnt == 0) {
+        lcd.print("    NO ERROR    ");
+        lcd.setCursor(0,1);
+        lcd.print("                ");
+      }
+      else {
+        for (i=errcnt; i<14; i++) {
+          if (i == 5) {
+            lcd.print("-");
+            lcd.setCursor(0,1);
+          }
+          if (i == 10) {
+            lcd.print("-");
+            break;
+          }
+          lcd.print("   ");
+        }
+      }
+    }
+    else if (pag_select == 4) {
+      // display 4
+      // C9999 T999 V00.0
+      // AFR14.7  FP035.0
+  
+      lcd.setCursor(0,0);
+      lcd.print("C");
+      lcdZeroPaddedPrint(err_checksum, 4);
+      lcd.print(" T");
+      lcdZeroPaddedPrint(err_timeout, 3);
+      lcd.print(" C");
+      lcdZeroPaddedPrint(th, 3, true);
+  
+      lcd.setCursor(0,1);
+      lcd.print("AFR");
+      lcdZeroPaddedPrint(afr, 3, true);
+      lcd.print("  FP");
+      lcdZeroPaddedPrint(fp, 4, true);
+    }
+    else if (pag_select == 5) {
+      // Top Recorded
+      // R0000 S000 V00.0
+      // E00 I00 M000 T00
+      lcd.setCursor(0,0);
+      lcd.print("R");
+  
+      lcdZeroPaddedPrint(rpmtop, 4);
+      lcd.print(" S");
+      lcdZeroPaddedPrint(vsstop, 3);
+      lcd.print(" V");
+      lcdZeroPaddedPrint(volttop, 3, true);
+  
+      lcd.setCursor(0,1);
+      lcd.print("E");
+      lcdZeroPaddedPrint(ecttop, 2);
+      lcd.print(" I");
+      lcdZeroPaddedPrint(iattop, 2);
+      lcd.print(" M");
+      lcdZeroPaddedPrint(mapstop, 3);
+      lcd.print(" T");
+      if (tps < 0) {
+        lcd.print("-");
+        lcdZeroPaddedPrint(tpstop, 1);
+      }
+      else {
+        lcdZeroPaddedPrint(tpstop, 2);
+      }
     }
   }
 }  
 
-void procdlcSerial() {
-  static unsigned long msTick = millis();
+// Read ECU Data
+void readEcuData() {
+  float f;
 
-  if (millis() - msTick >= 250) { // run every 250 ms
-    msTick = millis();
+  //char h_initobd2[12] = {0x68,0x6a,0xf5,0xaf,0xbf,0xb3,0xb2,0xc1,0xdb,0xb3,0xe9}; // 200ms - 300ms delay
+  //byte h_cmd1[6] = {0x20,0x05,0x00,0x10,0xcb}; // row 1
+  //byte h_cmd2[6] = {0x20,0x05,0x10,0x10,0xbb}; // row 2
+  //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
+  //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
+
+  if (dlcCommand(0x20,0x05,0x00,0x10)) { // row 1
+    if (obd_select == 1) rpm = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
+    if (obd_select == 2) rpm = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
+    // in odb1 rpm is -1
+    if (rpm < 0) { rpm = 0; }
+
+    vss = dlcdata[4];
+  }
+
+  if (dlcCommand(0x20,0x05,0x10,0x10)) { // row2
+    f = dlcdata[2];
+    f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
+    ect = round(f);
+    f = dlcdata[3];
+    f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
+    iat = round(f);
+    maps = dlcdata[4] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
+    //baro = dlcdata[5] * 0.716 - 5;
+    tps = (dlcdata[6] - 24) / 2;
+
+    /*
+    f = dlcdata[7];
+    f = f / 51.3; // o2 volt in V
+
+    // 0v to 1v / stock sensor
+    // 0v to 5v / AEM UEGO / linear
+    f = (f * 2) + 10; // afr for AEM UEGO
+    afr = round(f * 10); // x10 for display w/ 1 decimal
+    */
+
+    f = dlcdata[9];
+    f = f / 10.45; // batt volt in V
+    volt = round(f * 10); // x10 for display w/ 1 decimal
+    //alt_fr = dlcdata[10] / 2.55
+    //eld = 77.06 - dlcdata[11] / 2.5371
+  }
+
+  if (dlcCommand(0x20,0x05,0x20,0x10)) { // row3
+    sft = (dlcdata[2] / 128 - 1) * 100; // -30 to 30
+    lft = (dlcdata[3] / 128 - 1) * 100; // -30 to 30
+
+    inj = (dlcdata[6] * 256 + dlcdata[7]) / 250; // 0 to 16
+
+    //ign = (dlcdata[8] - 128) / 2;
+    f = dlcdata[8];
+    f = (f - 24) / 4;
+    ign = round(f * 10); // x10 for display w/ 1 decimal
+
+    //lmt = (dlcdata[9] - 128) / 2;
+    f = dlcdata[9];
+    f = (f - 24) / 4;
+    lmt = round(f * 10); // x10 for display w/ 1 decimal
+
+    iac = dlcdata[10] / 2.55;
+  }
+
+  if (dlcCommand(0x20,0x05,0x30,0x10)) { // row4
+    // dlcdata[7] to dlcdata[12] unknown
+    knoc = dlcdata[14] / 51; // 0 to 5
+  }
+
+  // IMAP = RPM * MAP / IAT / 2
+  // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
+  // Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
+  float maf = 0.0;
+  imap = rpm * maps / (iat + 273) / 2;
+  // ve = 75, ed = 1.595, afr = 14.7
+  maf = (imap / 60) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
+  // (gallons of fuel) = (grams of air) / (air/fuel ratio) / 6.17 / 454
+  //gof = maf / afr / 6.17 / 454;
+  //gear = vss / (rpm+1) * 150 + 0.3;
+
+
+}
+
+// Read Extra Sensors
+void readExtraSensors() {
     float f;
 
-    //char h_initobd2[12] = {0x68,0x6a,0xf5,0xaf,0xbf,0xb3,0xb2,0xc1,0xdb,0xb3,0xe9}; // 200ms - 300ms delay
-    //byte h_cmd1[6] = {0x20,0x05,0x00,0x10,0xcb}; // row 1
-    //byte h_cmd2[6] = {0x20,0x05,0x10,0x10,0xbb}; // row 2
-    //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
-    //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
-
-    if (dlcCommand(0x20,0x05,0x00,0x10)) { // row 1
-      if (obd_select == 1) rpm = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
-      if (obd_select == 2) rpm = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
-      // in odb1 rpm is -1
-      if (rpm < 0) { rpm = 0; }
-
-      vss = dlcdata[4];
-    }
-
-    if (dlcCommand(0x20,0x05,0x10,0x10)) { // row2
-      f = dlcdata[2];
-      f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
-      ect = round(f);
-      f = dlcdata[3];
-      f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
-      iat = round(f);
-      maps = dlcdata[4] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
-      //baro = dlcdata[5] * 0.716 - 5;
-      tps = (dlcdata[6] - 24) / 2;
-
-      /*
-      f = dlcdata[7];
-      f = f / 51.3; // o2 volt in V
-
-      // 0v to 1v / stock sensor
-      // 0v to 5v / AEM UEGO / linear
-      f = (f * 2) + 10; // afr for AEM UEGO
-      afr = round(f * 10); // x10 for display w/ 1 decimal
-      */
-
-      f = dlcdata[9];
-      f = f / 10.45; // batt volt in V
-      volt = round(f * 10); // x10 for display w/ 1 decimal
-      //alt_fr = dlcdata[10] / 2.55
-      //eld = 77.06 - dlcdata[11] / 2.5371
-    }
-
-    if (dlcCommand(0x20,0x05,0x20,0x10)) { // row3
-      sft = (dlcdata[2] / 128 - 1) * 100; // -30 to 30
-      lft = (dlcdata[3] / 128 - 1) * 100; // -30 to 30
-
-      inj = (dlcdata[6] * 256 + dlcdata[7]) / 250; // 0 to 16
-
-      //ign = (dlcdata[8] - 128) / 2;
-      f = dlcdata[8];
-      f = (f - 24) / 4;
-      ign = round(f * 10); // x10 for display w/ 1 decimal
-
-      //lmt = (dlcdata[9] - 128) / 2;
-      f = dlcdata[9];
-      f = (f - 24) / 4;
-      lmt = round(f * 10); // x10 for display w/ 1 decimal
-
-      iac = dlcdata[10] / 2.55;
-    }
-
-    if (dlcCommand(0x20,0x05,0x30,0x10)) { // row4
-      // dlcdata[7] to dlcdata[12] unknown
-      knoc = dlcdata[14] / 51; // 0 to 5
-    }
-
-    // IMAP = RPM * MAP / IAT / 2
-    // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
-    // Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
-    float maf = 0.0;
-    imap = rpm * maps / (iat + 273) / 2;
-    // ve = 75, ed = 1.595, afr = 14.7
-    maf = (imap / 60) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
-    // (gallons of fuel) = (grams of air) / (air/fuel ratio) / 6.17 / 454
-    //gof = maf / afr / 6.17 / 454;
-    //gear = vss / (rpm+1) * 150 + 0.3;
-
-    // procExtraSensors
+    // read voltage sensor (volt2)
     f = readVcc() / 1000; // V read from ref. or 5.0
     f = (analogRead(PIN_VOLT) * f) / 1024.0; // V
     f = f / (R2/(R1+R2)); // voltage divider
@@ -848,6 +858,7 @@ void procdlcSerial() {
 
     // x = (y + 5) / 0.5
 
+    // read afr sensor (afr)
     f = readVcc() / 1000; // V read from ref. or 5.0
     f = (analogRead(PIN_AFR) * f) / 1024.0; // V
     f = (f + 5) / 0.5; // afr
@@ -868,13 +879,14 @@ void procdlcSerial() {
 
     // x = (y - 0.5) / 0.04
 
+    // fuel pressur sensor (fp)
     f = readVcc() / 1000; // V read from ref. or 5.0
     f = (analogRead(PIN_FP) * f) / 1024.0; // V
     f = (f - 0.5) / 0.04; // psi
     fp = round(f * 10); // x10 for display w/ 1 decimal
 
+    // read thermal sensor (th)
     int b = 3950;
-    // th resistance
     f = analogRead(PIN_TH);
     
     f = R3 * (1023.0 / f - 1.0);
@@ -894,65 +906,65 @@ void procdlcSerial() {
     f -= 273.15;                // convert to C
     */
     th = round(f * 10); // x10 for display w/ 1 decimal
+}
 
-    if (rpm > rpmtop) {
-      rpmtop = rpm;
-    }
-    if (vss > vsstop) {
-      vsstop = vss;
-    }
-    if (ect > ecttop) {
-      ecttop = ect;
-    }
-    if (iat > iattop) {
-      iattop = iat;
-    }
-    if (volt > volttop) {
-      volttop = volt;
-    }
-    if (maps > mapstop) {
-      mapstop = maps;
-    }
+// Process Data
+void procData() {
+  if (rpm > rpmtop) {
+    rpmtop = rpm;
+  }
+  if (vss > vsstop) {
+    vsstop = vss;
+  }
+  if (ect > ecttop) {
+    ecttop = ect;
+  }
+  if (iat > iattop) {
+    iattop = iat;
+  }
+  if (volt > volttop) {
+    volttop = volt;
+  }
+  if (maps > mapstop) {
+    mapstop = maps;
+  }
 
-    // trip computer essentials
-    if (rpm > 0) {
-      if (vss > 0) { // running time
-        running_time ++;
-        vsssum += vss;
-        vssavg = (vsssum / running_time);
+  // trip computer essentials
+  if (rpm > 0) {
+    if (vss > 0) { // running time
+      running_time ++;
+      vsssum += vss;
+      vssavg = (vsssum / running_time);
 
-        float f;
-        //f = vssavg;
-        //f = ((f * 1000) / 14400) * running_time; // @ 250ms
-        //distance = round(f);
+      float f;
+      //f = vssavg;
+      //f = ((f * 1000) / 14400) * running_time; // @ 250ms
+      //distance = round(f);
 
-        // formula: distance = speed * fps / 3600
-        // where: distance = kilometer(s), speed = km/h, fps in second(s)
-        f = vss;
-        f = f * 0.25 / 3600; // @ 250ms / km
-        f = f * 1000; // km to meters
-        distance = distance + round(f);
+      // formula: distance = speed * fps / 3600
+      // where: distance = kilometer(s), speed = km/h, fps in second(s)
+      f = vss;
+      f = f * 0.25 / 3600; // @ 250ms / km
+      f = f * 1000; // km to meters
+      distance = distance + round(f);
 
-        // time = distance / speed
-      }
-      else { // idle time
-        idle_time ++;
-      }
+      // time = distance / speed
     }
-
-    // critical ect value or speed limit, alarm on
-    if (ect > ect_alarm || vss > vss_alarm) { digitalWrite(PIN_BUZZER, HIGH); }
-    else { digitalWrite(PIN_BUZZER, LOW); }
-
-    int th_threshold = 5;
-    if (th <= th_threshold) {
-      digitalWrite(PIN_AC, LOW);
+    else { // idle time
+      idle_time ++;
     }
-    else if (th >= (th_threshold + 10)) {
-      digitalWrite(PIN_AC, HIGH); 
-    }
+  }
 
-    procLCD();
+  // critical ect value or speed limit, alarm on
+  if (ect > ect_alarm || vss > vss_alarm) { digitalWrite(PIN_BUZZER, HIGH); }
+  else { digitalWrite(PIN_BUZZER, LOW); }
+
+  int th_threshold = 5;
+  if (th <= th_threshold) {
+    digitalWrite(PIN_AC, LOW);
+  }
+  else if (th >= (th_threshold + 10)) {
+    digitalWrite(PIN_AC, HIGH);
   }
 }
 
@@ -1031,16 +1043,14 @@ void setup()
   dlcSerial.begin(9600);
 
   // LCD I2C init
-  lcd.setBacklightPin(3, POSITIVE);
-  lcd.setBacklight(HIGH); // NOTE: You can turn the backlight off by setting it to LOW instead of HIGH
-
-  lcd.begin(16, 2); // sets the LCD's rows and colums:
+  lcd.init();
+  lcd.backlight();
 
   // initial beep
-  for (int i=0; i<3; i++) {
-    pushPinHi(PIN_BUZZER, 50); // beep 50ms
-    delay(80);
-  }
+  //for (int i=0; i<3; i++) {
+  //  pushPinHi(PIN_BUZZER, 50); // beep 50ms
+  //  delay(80);
+  //}
 
   if (EEPROM.read(0) == 0xff) { EEPROM.write(0, obd_select); }
   //if (EEPROM.read(1) == 0xff) { EEPROM.write(1, pag_select); }
@@ -1070,7 +1080,9 @@ void setup()
 void loop() {
   static unsigned long btTick = 0;
 
-  procButtons();
+  //procButtons();
+  readExtraSensors();
+  
   if (!isButtonPressed) {
     //procdlcSerial(); // executes every 250ms
     btSerial.listen();
@@ -1093,8 +1105,10 @@ void loop() {
     }
 
     if (!elm_mode) {
-      procdlcSerial();
+      readEcuData();
     }
   }
+
+  procDisplay();
   //delay(300);
 }
