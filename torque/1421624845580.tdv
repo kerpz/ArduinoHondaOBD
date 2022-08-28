@@ -1,0 +1,25 @@
+#This is a Torque.apk vehicle, Torque is an OBD diagnostic tool for Android
+#Sat Oct 29 18:51:51 GMT+08:00 2016
+fuelType=0
+obdAdjustNew=1.0
+lastMPG=661.536331325975
+tankCapacity=54.09849166870117
+volumetricEfficiency=85.0
+alternateHeader=false
+weight=1400.0
+odoMeter=123.46167533879634
+adapterName=As defined in global OBD2 preferences
+adapter=00\:00\:00\:00\:00\:00
+boostAdjust=0.0
+customInit=
+mpgAdjust=1.0
+preferredProtocol=0
+fuelCost=0.18477408587932587
+ownProfile=false
+displacement=1.6
+tankUsed=13.303524142285568
+lastMPGCount=245
+name=Civic SiR
+maxRpm=9000
+fuelDistance=0.0
+fuelUsed=0.0
