@@ -24,7 +24,9 @@
    Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
    http://www.lightner.net/obd2guru/IMAP_AFcalc.html
    http://www.installuniversity.com/install_university/installu_articles/volumetric_efficiency/ve_computation_9.012000.htm
-
+ - AFR = (o2 * 2) + 10
+   Where: o2 in Volts
+ 
  Arduino Pin Mapping / Configuration:
  * Pulse Input - 50k ohms over 5.1v zener
  $ Switch Out - 1k ohms on NPN transistor (2n3904)
@@ -36,7 +38,7 @@
  - 04 = $ Door Lock | * RPM Input
  - 05 = $ Door Unlock | * VSS Input
  - 06 = $ AC Compressor
- - 07 = 
+ - 07 = Navigation Button
  - 08 = * Door Sensor
  - 09 = AEM AFR UEGO (Serial In)
  - 10 = Bluetooth RX
@@ -50,7 +52,7 @@
  - 17 = (A3) NTC Thermistor
  - 18 = (A4) I2C / LCD I2C
  - 19 = (A5) I2C / LCD I2C
- - 20 = (A6) Navigation Button (reason: multiple button using resistors)
+ - 20 = (A6)
  - 21 = (A7)
 */
 
@@ -64,15 +66,15 @@
 #define PIN_AC 6
 #define PIN_BUZZER 13
 // IN
+#define PIN_BUTTON 7
 #define PIN_DOOR 8
 #define PIN_VOLT 14
 #define PIN_FP 15
 #define PIN_AFR 16
 #define PIN_TH 17
-#define PIN_BUTTON 20
 
 #include <LiquidCrystal_I2C.h>
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal_I2C lcd(0x27, 16, 2); // my car lcd = 0x3f, my bench lcd = 0x27
 
 // comment the PCINT1_vect,PCINT2_vect,PCINT3_vect handle in softserial library
 // since we are just using D10,D11,D12 and we want to handle interrupts @ A0 - A5
@@ -96,23 +98,25 @@ bool elm_header = false;
 byte elm_protocol = 0; // auto
 
 // ecu data
-int rpm=0, ect=0, iat=0,maps=0, baro=0, tps=0, volt=0, imap=0, sft=0, lft=0, inj=0, ign=0, lmt=0, iac=0, knoc=0;
-// extra sensor data
-float volt2,th,afr,fp;
+int rpm=0, ect=0, iat=0, maps=0, baro=0, tps=0, sft=0, lft=0, inj=0, ign=0, lmt=0, iacv=0, knoc=0;
+float volt=0, o2=0;
+byte vss=0;
+bool sw_aircon, sw_brake, sw_vtec;
+
+// extra sensor
+float volt2=0,th=0,afr=0,fp=0;
 bool cp;
-int btn;
 
-int rpmtop=0,volttop=0,mapstop=0,tpstop=0,ecttop=0,iattop=0;
-
+int maf, rpmtop=0,volttop=0,mapstop=0,tpstop=0,ecttop=0,iattop=0;
 unsigned long vsssum=0,running_time=0,idle_time=0,distance=0;
-byte vss=0,vsstop=0,vssavg=0;
+byte gear, vsstop=0,vssavg=0;
 
 
 byte obd_select = 2; // 1 = obd1, 2 = obd2
-byte pag_select = 0; // lcd page
+byte pag_select = 5; // lcd page
 
 byte ect_alarm = 98; // celcius
-byte vss_alarm = 100; // kph
+byte vss_alarm = 100; // kph / + 10
 byte th_threshold = 4; // celcius / + 10
 
 bool isButtonPressed = false;
@@ -124,9 +128,9 @@ float R1 = 680000.0; // Resistance of R1 (680kohms)
 float R2 = 220000.0; // Resistance of R2 (220kohms)
 float R3 = 10000.0; // Thermistor divider
 
-unsigned long err_timeout = 0, err_checksum = 0, ect_cnt = 0, vss_cnt = 0;
-
 byte dlcdata[20] = {0};  // dlc data buffer
+unsigned long dlcTimeout = 0, dlcChecksumError = 0;
+bool dlcWait = false;
 
 int dtcErrors[14], dtcCount = 0;
 
@@ -158,7 +162,7 @@ void dlcInit() {
 int dlcCommand(byte cmd, byte num, byte loc, byte len) {
   byte crc = (0xFF - (cmd + num + loc + len - 0x01)); // checksum FF - (cmd + num + loc + len - 0x01)
 
-  unsigned long timeOut = millis() + 200; // timeout @ 200 ms
+  unsigned long timeOut = millis() + 30; // timeout @ 30 ms
 
   memset(dlcdata, 0, sizeof(dlcdata));
 
@@ -174,13 +178,25 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len) {
   while (i < (len+3) && millis() < timeOut) {
     if (dlcSerial.available()) {
       dlcdata[i] = dlcSerial.read();
-      //delay(1); // this is required
       i++;
     }
+    else {
+      procButtons(); // haxx
+    }
+    //delay(1); // this is required
   }
+  /*
+  while (dlcSerial.available()) {
+    dlcdata[i] = dlcSerial.read();
+    //Serial.print(btdata1[i]);
+    
+    delay(1); // this is required
+  }
+  */
 
   if (i < (len+3)) { // timeout
-    err_timeout++;
+    dlcTimeout++;
+    if (dlcTimeout > 1000) dlcTimeout=0;
     return 0;  // data error
   }
   // checksum
@@ -190,7 +206,7 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len) {
   }
   crc = 0xFF - (crc - 1);
   if (crc != dlcdata[len+2]) { // checksum failed
-    err_checksum++;
+    dlcChecksumError++;
     return 0; // data error
   }
   return 1; // success
@@ -228,8 +244,11 @@ void procbtSerial() {
     char btdata2[20]={0};  // bt data out buffer
     int i = 0;
   
+    btSerial.listen();
+    
     while (btSerial.available()) {
       btdata1[i] = toupper(btSerial.read());
+      //Serial.print(btdata1[i]);
       
       delay(1); // this is required
       
@@ -283,13 +302,7 @@ void procbtSerial() {
         }
         else if (!strcmp(btdata1, "ATRV")) { // read voltage in float / volts
           //btSerial.print("12.0V\r\n>");
-          byte v1 = 0, v2 = 0;
-          //unsigned int volt2 = round(readVoltageDivider(14) * 10); // to cV
-          long vcc = readVcc(); // in mV
-          unsigned int volt2 = round((((analogRead(PIN_VOLT) * vcc) / 1024.0) / (R2/(R1+R2))) * 10);
-          v1 = volt2 / 10;
-          v2 = volt2 % 10;
-          sprintf_P(btdata2, PSTR("%d.%dV\r\n>"), v1, v2);
+          sprintf_P(btdata2, PSTR("%.1fV\r\n>"), volt2);
         }
         // kerpz custom AT cmd
         else if (len == 6 && strstr(btdata1, "ATSHP")) { // set hobd protocol
@@ -328,8 +341,7 @@ void procbtSerial() {
         else if (len == 2 && btdata1[0] == '0' && btdata1[1] == '4') { // mode 04
           // clear dtc / stored values
           // reset dtc/ecu honda
-          // 21 04 01 DA / 01 03 FC
-          dlcCommand(0x21, 0x04, 0x01, 0x00); // reset ecu
+          resetEcu();
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
         else if (len == 2 && btdata1[0] == '0' && btdata1[1] == '3') { // mode 03
@@ -345,10 +357,10 @@ void procbtSerial() {
           }
           else if (strstr(&btdata1[2], "01")) {
             // dtc / AA BB CC DD / A7 = MIL on/off, A6-A0 = DTC_CNT
-            if (dlcCommand(0x20, 0x05, 0x0B, 0x01)) {
-              byte v = ((dlcdata[2] >> 5) & 1) << 7; // get bit 5 on dlcdata[2], set it to a7
-              sprintf_P(btdata2, PSTR("41 01 %02X 00 00 00\r\n>"), v);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x0B, 0x01)) {
+            //  byte v = ((dlcdata[2] >> 5) & 1) << 7; // get bit 5 on dlcdata[2], set it to a7
+            //  sprintf_P(btdata2, PSTR("41 01 %02X 00 00 00\r\n>"), v);
+            //}
           }
           /*
           else if (strstr(&btdata1[2], "02")) { // freeze dtc / 00 61 ???
@@ -373,74 +385,82 @@ void procbtSerial() {
           }
           */
           else if (strstr(&btdata1[2], "05")) { // ect (°C)
-            if (dlcCommand(0x20, 0x05, 0x10, 0x01)) {
-              float f = dlcdata[2];
-              f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
-              dlcdata[2] = round(f) + 40; // A-40
-              sprintf_P(btdata2, PSTR("41 05 %02X\r\n>"), dlcdata[2]);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x10, 0x01)) {
+            //  float f = dlcdata[2];
+            //  f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
+            //  dlcdata[2] = round(f) + 40; // A-40
+              byte b = round(ect) + 40;
+              sprintf_P(btdata2, PSTR("41 05 %02X\r\n>"), b);
+            //}
           }
           else if (strstr(&btdata1[2], "06")) { // short FT (%)
-            if (dlcCommand(0x20, 0x05, 0x20, 0x01)) {
-              sprintf_P(btdata2, PSTR("41 06 %02X\r\n>"), dlcdata[2]);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x20, 0x01)) { // dlcdata[2]
+              sprintf_P(btdata2, PSTR("41 06 %02X\r\n>"), sft);
+            //}
           }
           else if (strstr(&btdata1[2], "07")) { // long FT (%)
-            if (dlcCommand(0x20, 0x05, 0x22, 0x01)) {
-              sprintf_P(btdata2, PSTR("41 07 %02X\r\n>"), dlcdata[2]);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x22, 0x01)) { // dlcdata[2]
+              sprintf_P(btdata2, PSTR("41 07 %02X\r\n>"), lft);
+            //}
           }
-          //else if (strstr(&btdata1[2], "0A")) { // fuel pressure
+          else if (strstr(&btdata1[2], "0A")) { // fuel pressure
           //  btSerial.print("41 0A EF\r\n");
-          //}
+            byte b = fp / 3;
+            sprintf_P(btdata2, PSTR("41 0A %02X\r\n>"), b);
+          }
           else if (strstr(&btdata1[2], "0B")) { // map (kPa)
-            if (dlcCommand(0x20, 0x05, 0x12, 0x01)) {
-              int i = dlcdata[2] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
-              sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), i);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x12, 0x01)) {
+            //  int i = dlcdata[2] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
+              sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), maps);
+            //}
           }
           else if (strstr(&btdata1[2], "0C")) { // rpm
-            if (dlcCommand(0x20, 0x05, 0x00, 0x02)) {
-              int rpm = 0;
-              if (obd_select == 1) { rpm = (1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1)) * 4; } // OBD1
-              if (obd_select == 2) { rpm = (dlcdata[2] * 256 + dlcdata[3]); } // OBD2
+            //if (dlcCommand(0x20, 0x05, 0x00, 0x02)) {
+            //  int rpm = 0;
+            //  if (obd_select == 1) { rpm = (1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1)) * 4; } // OBD1
+            //  if (obd_select == 2) { rpm = (dlcdata[2] * 256 + dlcdata[3]); } // OBD2
               // in odb1 rpm is -1
-              if (rpm < 0) { rpm = 0; }
-              sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(rpm), lowByte(rpm)); //((A*256)+B)/4
-            }
+            //  if (rpm < 0) { rpm = 0; }
+              int i = rpm * 4;
+              sprintf_P(btdata2, PSTR("41 0C %02X %02X\r\n>"), highByte(i), lowByte(i)); //((A*256)+B)/4
+            //}
           }
           else if (strstr(&btdata1[2], "0D")) { // vss (km/h)
-            if (dlcCommand(0x20, 0x05, 0x02, 0x01)) {
-              sprintf_P(btdata2, PSTR("41 0D %02X\r\n>"), dlcdata[2]);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x02, 0x01)) { // dlcdata[2]
+              sprintf_P(btdata2, PSTR("41 0D %02X\r\n>"), vss);
+            //}
           }
           else if (strstr(&btdata1[2], "0E")) { // timing advance (°)
-            if (dlcCommand(0x20, 0x05, 0x26, 0x01)) {
-              byte b = ((dlcdata[2] - 24) / 2) + 128;
-              sprintf_P(btdata2, PSTR("41 0E %02X\r\n>"), b);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x26, 0x01)) {
+            //  byte b = ((dlcdata[2] - 24) / 2) + 128;
+              //byte b = (ign + 64) * 2;
+              sprintf_P(btdata2, PSTR("41 0E %02X\r\n>"), ign);
+            //}
           }
           else if (strstr(&btdata1[2], "0F")) { // iat (°C)
-            if (dlcCommand(0x20, 0x05, 0x11, 0x01)) {
-              float f = dlcdata[2];
-              f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
-              dlcdata[2] = round(f) + 40; // A-40
-              sprintf_P(btdata2, PSTR("41 0F %02X\r\n>"), dlcdata[2]);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x11, 0x01)) {
+            //  float f = dlcdata[2];
+            //  f = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
+            //  dlcdata[2] = round(f) + 40; // A-40
+              byte b = round(iat) + 40;
+              sprintf_P(btdata2, PSTR("41 0F %02X\r\n>"), b);
+            //}
           }
           else if (strstr(&btdata1[2], "11")) { // tps (%)
-            if (dlcCommand(0x20, 0x05, 0x14, 0x01)) {
-              byte b = (dlcdata[2] - 24) / 2;
+            //if (dlcCommand(0x20, 0x05, 0x14, 0x01)) {
+              //byte b = (tps - 24) / 2;
+              byte b = (tps * 255) / 100;
               sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), b);
-            }
+            //}
           }
           else if (strstr(&btdata1[2], "13")) { // o2 sensor present
             sprintf_P(btdata2, PSTR("41 13 80\r\n>")); // 10000000 / assume bank 1 present
           }
           else if (strstr(&btdata1[2], "14")) { // o2 (V)
-            if (dlcCommand(0x20, 0x05, 0x15, 0x01)) {
-              sprintf_P(btdata2, PSTR("41 14 %02X FF\r\n>"), dlcdata[2]);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x15, 0x01)) { // dlcdata[2]
+              byte b = o2 * 200;
+              sprintf_P(btdata2, PSTR("41 14 %02X FF\r\n>"), b);
+            //}
           }
           else if (strstr(&btdata1[2], "1C")) {
             sprintf_P(btdata2, PSTR("41 1C 01\r\n>")); // obd2
@@ -452,26 +472,35 @@ void procbtSerial() {
           //  sprintf_P(btdata2, PSTR("41 2F FF\r\n>")); // max
           //}
           else if (strstr(&btdata1[2], "33")) { // baro (kPa)
-            if (dlcCommand(0x20, 0x05, 0x13, 0x01)) {
-              int i = dlcdata[2] * 0.716 - 5; // 101 kPa
-              sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), i);
-            }
+            //if (dlcCommand(0x20, 0x05, 0x13, 0x01)) {
+            //  int i = dlcdata[2] * 0.716 - 5; // 101 kPa
+              sprintf_P(btdata2, PSTR("41 0B %02X\r\n>"), baro);
+            //}
           }
           else if (strstr(&btdata1[2], "40")) {
             sprintf_P(btdata2, PSTR("41 40 48 00 00 00\r\n>")); // pid 42 and 45
           }
           else if (strstr(&btdata1[2], "42")) { // ecu voltage (V)
-            if (dlcCommand(0x20, 0x05, 0x17, 0x01)) {
-              float f = dlcdata[2];
-              f = f / 10.45;
-              unsigned int u = f * 1000; // ((A*256)+B)/1000
+            //if (dlcCommand(0x20, 0x05, 0x17, 0x01)) {
+            //  float f = dlcdata[2];
+            //  f = f / 10.45;
+              unsigned int u = volt * 1000; // ((A*256)+B)/1000
               sprintf_P(btdata2, PSTR("41 42 %02X %02X\r\n>"), highByte(u), lowByte(u));
-            }
+            //}
           }
-          else if (strstr(&btdata1[2], "45")) { // iacv / relative throttle position (%)
-            if (dlcCommand(0x20, 0x05, 0x28, 0x01)) {
-              sprintf_P(btdata2, PSTR("41 45 %02X\r\n>"), dlcdata[2]);
-            }
+          else if (strstr(&btdata1[2], "45")) { // tps / relative throttle position (%)
+            //if (dlcCommand(0x20, 0x05, 0x28, 0x01)) { // dlcdata[2]
+              //byte b = (tps - 24) / 2;
+              byte b = (tps * 255) / 100;
+              sprintf_P(btdata2, PSTR("41 11 %02X\r\n>"), b);
+            //}
+          }
+          else if (strstr(&btdata1[2], "4C")) { // iacv (%)
+            //if (dlcCommand(0x20, 0x05, 0x28, 0x01)) { // dlcdata[2]
+              //byte b = (tps - 24) / 2;
+              byte b = (iacv * 255) / 100;
+              sprintf_P(btdata2, PSTR("41 4C %02X\r\n>"), b);
+            //}
           }
         }
         
@@ -514,8 +543,13 @@ void procbtSerial() {
     }
 }  
 
-void lcdZeroPaddedPrint(long i, byte len, bool decimal = false) {
-  if (decimal) i *= 10;
+void lcdZeroPaddedPrint(float f, byte len, bool decimal = false) {
+  long i;
+  if (decimal) {
+    f *= 10;
+    len++;
+  }
+  i = f;
   
   switch (len)
   {
@@ -534,8 +568,8 @@ void lcdZeroPaddedPrint(long i, byte len, bool decimal = false) {
     case 2:
       lcd.print(i/10);
       i %= 10;
-      if (decimal) lcd.print(".");
     default:
+      if (decimal) lcd.print(".");
       lcd.print(i);
   }
 }
@@ -573,7 +607,7 @@ void procDisplay(void) {
       lcd.print(" S");
       lcdZeroPaddedPrint(vss, 3);
       lcd.print(" V");
-      lcdZeroPaddedPrint(volt, 3, true);
+      lcdZeroPaddedPrint(volt, 2, true);
   
       lcd.setCursor(0,1);
       lcd.print("E");
@@ -593,25 +627,27 @@ void procDisplay(void) {
     }
     else if (pag_select == 1) {
       // display 2
-      // IGN+16.5 BK0 AC0
-      // INJ00 IAC00 KNC0
+      // IGN+16.5 AC0 VT0
+      // INJ00 IAC00 O0.0
   
       lcd.setCursor(0,0);
       lcd.print("IGN");
       if (ign < 0) { lcd.print("-"); }
       else { lcd.print("+"); }
       //lcd.print(ign);
-      lcdZeroPaddedPrint(ign, 3, true);
-      lcd.print(" BR0");
-      lcd.print(" AC0");
+      lcdZeroPaddedPrint(ign, 2, true);
+      lcd.print(" AC");
+      lcd.print(sw_aircon);
+      lcd.print(" VT");
+      lcd.print(sw_vtec);
   
       lcd.setCursor(0,1);
       lcd.print("INJ");
       lcdZeroPaddedPrint(inj, 2);
       lcd.print(" IAC");
-      lcdZeroPaddedPrint(iac, 2);
-      lcd.print(" KNC");
-      lcdZeroPaddedPrint(knoc, 1);
+      lcdZeroPaddedPrint(iacv, 2);
+      lcd.print(" O");
+      lcdZeroPaddedPrint(o2, 1, true);
     }
     else if (pag_select == 2) {
       // display 3 // trip computer
@@ -632,7 +668,7 @@ void procDisplay(void) {
       lcdSecondsToTimePrint(total_time);
       lcd.print(" D");
       unsigned int total_distance = distance / 100; // in 000.0km format
-      lcdZeroPaddedPrint(total_distance, 4, true);
+      lcdZeroPaddedPrint(total_distance, 3, true);
     }
     else if (pag_select == 3) {
       // display 3 // CEL/MIL codes
@@ -668,34 +704,44 @@ void procDisplay(void) {
       }
     }
     else if (pag_select == 4) {
-      // display 4
+      // display 4 // extra sensor
       // AFR14.7  FP035.0
-      // TH00.0 CP0 B0000
+      // TH00.0 CP0 V00.0
   
       lcd.setCursor(0,0);
       lcd.print("AFR");
-      lcdZeroPaddedPrint(afr, 3, true);
+      lcdZeroPaddedPrint(afr, 2, true);
       lcd.print("  FP");
-      lcdZeroPaddedPrint(fp, 4, true);
+      lcdZeroPaddedPrint(fp, 3, true);
 
       lcd.setCursor(0,1);
       lcd.print("TH");
       lcdZeroPaddedPrint(th, 2, true);
       lcd.print(" CP");
       lcdZeroPaddedPrint(cp, 1);
-      lcd.print(" B");
-      lcdZeroPaddedPrint(btn, 4);
+      lcd.print(" V");
+      lcdZeroPaddedPrint(volt2, 2, true);
     }
     else if (pag_select == 5) {
       // display 5
-      // ERRC0000 ERRT000
+      // EC0000 ET000 HO1
+      // MP000 MF000  GR0
 
       lcd.setCursor(0,0);
-      lcd.print("ERRC");
-      lcdZeroPaddedPrint(err_checksum, 4);
-      lcd.print(" ERRT");
-      lcdZeroPaddedPrint(err_timeout, 3);
-      lcd.print("                ");
+      lcd.print("EC");
+      lcdZeroPaddedPrint(dlcChecksumError, 4);
+      lcd.print(" ET");
+      lcdZeroPaddedPrint(dlcTimeout, 3);
+      lcd.print(" HO");
+      lcd.print(obd_select);
+
+      lcd.setCursor(0,1);
+      lcd.print("MP");
+      lcdZeroPaddedPrint(maps, 3);
+      lcd.print(" MF");
+      lcdZeroPaddedPrint(maf, 3);
+      lcd.print("  GR");
+      lcd.print(gear);
     }
     /*
     else if (pag_select == 5) {
@@ -730,6 +776,83 @@ void procDisplay(void) {
     */
 }  
 
+// Read ECU Data
+void readEcuData() {
+  float f;
+
+  //char h_initobd2[12] = {0x68,0x6a,0xf5,0xaf,0xbf,0xb3,0xb2,0xc1,0xdb,0xb3,0xe9}; // 200ms - 300ms delay
+  //byte h_cmd1[6] = {0x20,0x05,0x00,0x10,0xcb}; // row 1
+  //byte h_cmd2[6] = {0x20,0x05,0x10,0x10,0xbb}; // row 2
+  //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
+  //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
+
+  if (dlcCommand(0x20,0x05,0x00,0x10)) { // row 1
+    if (obd_select == 1) rpm = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
+    if (obd_select == 2) rpm = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
+    // in odb1 rpm is -1
+    if (rpm < 0) { rpm = 0; }
+
+    vss = dlcdata[4];
+
+    // discrete sensors
+    //dlcdata[10]
+    sw_aircon = bitRead(dlcdata[10], 2);
+    //dlcdata[11]
+    //dlcdata[12]
+    sw_vtec = bitRead(dlcdata[12], 3);
+    //dlcdata[13]
+    //dlcdata[14]
+    //dlcdata[15]
+    //dlcdata[17] 
+  }
+
+  if (dlcCommand(0x20,0x05,0x10,0x10)) { // row2
+    f = dlcdata[2];
+    ect = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
+    f = dlcdata[3];
+    iat = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
+    maps = dlcdata[4] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
+    baro = dlcdata[5] * 0.716 - 5; // kPa
+    tps = (dlcdata[6] - 24) / 2;
+
+    f = dlcdata[7];
+    o2 = f / 51.3; // (V) o2
+
+    /*
+    // 0v to 1v / stock sensor
+    // 0v to 5v / AEM UEGO / linear
+    afr = (f * 2) + 10; // afr for AEM UEGO
+    */
+
+    f = dlcdata[9];
+    volt = f / 10.45; // (V) battery
+    //alt_fr = dlcdata[10] / 2.55 // (%) alternator load
+    //eld = 77.06 - dlcdata[11] / 2.5371; // (Amps) electrical load
+  }
+
+  if (dlcCommand(0x20,0x05,0x20,0x10)) { // row3
+    sft = (dlcdata[2] / 128 - 1) * 100; // (%) -30 to 30
+    lft = (dlcdata[3] / 128 - 1) * 100; // (%) -30 to 30
+
+    inj = (dlcdata[6] * 256 + dlcdata[7]) / 250; // (ms) 0 to 16
+
+    //ign = (dlcdata[8] - 128) / 2;
+    f = dlcdata[8];
+    ign = (f - 24) / 4; // (degrees)
+
+    //lmt = (dlcdata[9] - 128) / 2;
+    f = dlcdata[9];
+    lmt = (f - 24) / 4;
+
+    iacv = dlcdata[10] / 2.55;
+  }
+
+  if (dlcCommand(0x20,0x05,0x30,0x10)) { // row4
+    // dlcdata[7] to dlcdata[12] unknown
+    knoc = dlcdata[14] / 51; // 0 to 5
+  }
+}
+
 // Read DTC Error
 void scanDtcError() {
   byte i;
@@ -754,82 +877,10 @@ void scanDtcError() {
   }
 }
 
-// Read ECU Data
-void readEcuData() {
-  float f;
-
-  //char h_initobd2[12] = {0x68,0x6a,0xf5,0xaf,0xbf,0xb3,0xb2,0xc1,0xdb,0xb3,0xe9}; // 200ms - 300ms delay
-  //byte h_cmd1[6] = {0x20,0x05,0x00,0x10,0xcb}; // row 1
-  //byte h_cmd2[6] = {0x20,0x05,0x10,0x10,0xbb}; // row 2
-  //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
-  //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
-
-  if (dlcCommand(0x20,0x05,0x00,0x10)) { // row 1
-    if (obd_select == 1) rpm = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
-    if (obd_select == 2) rpm = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
-    // in odb1 rpm is -1
-    if (rpm < 0) { rpm = 0; }
-
-    vss = dlcdata[4];
-  }
-
-  if (dlcCommand(0x20,0x05,0x10,0x10)) { // row2
-    f = dlcdata[2];
-    ect = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
-    f = dlcdata[3];
-    iat = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
-    maps = dlcdata[4] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
-    //baro = dlcdata[5] * 0.716 - 5;
-    tps = (dlcdata[6] - 24) / 2;
-
-    /*
-    f = dlcdata[7];
-    f = f / 51.3; // o2 volt in V
-
-    // 0v to 1v / stock sensor
-    // 0v to 5v / AEM UEGO / linear
-    f = (f * 2) + 10; // afr for AEM UEGO
-    afr = round(f * 10); // x10 for display w/ 1 decimal
-    */
-
-    f = dlcdata[9];
-    volt = f / 10.45; // batt volt in V
-    //alt_fr = dlcdata[10] / 2.55
-    //eld = 77.06 - dlcdata[11] / 2.5371
-  }
-
-  if (dlcCommand(0x20,0x05,0x20,0x10)) { // row3
-    sft = (dlcdata[2] / 128 - 1) * 100; // -30 to 30
-    lft = (dlcdata[3] / 128 - 1) * 100; // -30 to 30
-
-    inj = (dlcdata[6] * 256 + dlcdata[7]) / 250; // 0 to 16
-
-    //ign = (dlcdata[8] - 128) / 2;
-    f = dlcdata[8];
-    ign = (f - 24) / 4;
-
-    //lmt = (dlcdata[9] - 128) / 2;
-    f = dlcdata[9];
-    lmt = (f - 24) / 4;
-
-    iac = dlcdata[10] / 2.55;
-  }
-
-  if (dlcCommand(0x20,0x05,0x30,0x10)) { // row4
-    // dlcdata[7] to dlcdata[12] unknown
-    knoc = dlcdata[14] / 51; // 0 to 5
-  }
-
-  // IMAP = RPM * MAP / IAT / 2
-  // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
-  // Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
-  float maf = 0.0;
-  imap = rpm * maps / (iat + 273) / 2;
-  // ve = 75, ed = 1.595, afr = 14.7
-  maf = (imap / 60) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
-  // (gallons of fuel) = (grams of air) / (air/fuel ratio) / 6.17 / 454
-  //gof = maf / afr / 6.17 / 454;
-  //gear = vss / (rpm+1) * 150 + 0.3;
+// Reset ECU
+void resetEcu() {
+  // 21 04 01 DA / 01 03 FC
+  dlcCommand(0x21, 0x04, 0x01, 0x00); // reset ecu
 }
 
 // Read Extra Sensors
@@ -839,7 +890,7 @@ void readExtraSensors() {
     // read voltage sensor (volt2)
     f = readVcc() / 1000; // V read from ref. or 5.0
     f = (analogRead(PIN_VOLT) * f) / 1024.0; // V
-    f = f / (R2/(R1+R2)); // voltage divider
+    volt2 = f / (R2/(R1+R2)); // voltage divider
 
     // air fuel ratio, x=afr(10-20), y=volts(0-5)
     // y = mx + b // slope intercept
@@ -858,7 +909,7 @@ void readExtraSensors() {
     // read afr sensor (afr)
     f = readVcc() / 1000; // V read from ref. or 5.0
     f = (analogRead(PIN_AFR) * f) / 1024.0; // V
-    f = (f + 5) / 0.5; // afr
+    afr = (f + 5) / 0.5; // afr
     //f = 2 * f + 10;
 
     // fuel pressure, x=psi(0-100), y=volts(0.5-4.5)
@@ -879,6 +930,10 @@ void readExtraSensors() {
     f = readVcc() / 1000; // V read from ref. or 5.0
     f = (analogRead(PIN_FP) * f) / 1024.0; // V
     f = (f - 0.5) / 0.04; // psi
+    fp = f * 6.89476; // kPa
+    // ideal temperature correctors
+    if (fp < 0) fp = 0;
+    if (fp > 689) fp = 689;
 
     // read thermal sensor (th)
     int b = 3950;
@@ -886,8 +941,8 @@ void readExtraSensors() {
     
     f = R3 * (1023.0 / f - 1.0);
     f = log(f);
-    f = 1.0 / (0.001129148 + (0.000234125 * f) + (0.0000000876741 * f * f * f));
-    th = f - 273.15;                // convert to C
+    f = 1.0 / (0.001129148 + (0.000234125 * f) + (0.0000000876741 * f * f * f)); // K
+    th = f - 273.15; // convert to C
     // ideal temperature correctors
     if (th < 0) th = 0;
     if (th > 99) th = 99;
@@ -905,17 +960,71 @@ void readExtraSensors() {
     */
 }
 
+void pushPinHi(byte pin, unsigned int delayms)
+{
+  digitalWrite(pin, HIGH);
+  delay(delayms);
+  digitalWrite(pin, LOW);
+}
+
+void procButtons() {
+  static unsigned long buttonsTick = 0;
+  static bool button_press_old = HIGH;
+
+  int button_press_new = digitalRead(PIN_BUTTON); // change to multiple button
+
+  if (button_press_new != button_press_old) { // change state
+    if (button_press_new == HIGH) { // on released
+      if (millis() - buttonsTick >= 5000) { // long press 5 secs
+        scanDtcError();
+        //resetECU();
+      }
+      else if (millis() - buttonsTick >= 3000) { // long press 3 secs
+        obd_select++;
+        if (obd_select > 2) {
+          obd_select = 1;
+        }
+        EEPROM.write(0, obd_select);
+      }
+      else if (millis() - buttonsTick >= 5) { // short press 5 ms
+        pag_select++;
+        if (pag_select > 5) {
+          pag_select = 0;
+        }
+        //EEPROM.write(1, pag_select);
+      }
+      buttonsTick = 0; // reset timer
+      isButtonPressed = false;
+    }
+    else { // on pressed
+      buttonsTick = millis(); // start timer
+      isButtonPressed = true;
+    }
+    button_press_old = button_press_new;
+  }
+
+  if (button_press_new == LOW) { // while pressed
+    if (millis() - buttonsTick == 5) { // beep @ 5 ms
+      pushPinHi(PIN_BUZZER, 50); // beep 50ms
+    }
+    else if (millis() - buttonsTick == 3000) { // beep @  3 secs
+      pushPinHi(PIN_BUZZER, 50); // beep 50ms
+    }
+    else if (millis() - buttonsTick == 5000) { // beep @  5 secs
+      pushPinHi(PIN_BUZZER, 50); // beep 50ms
+    }
+  }
+}
+
 // Process Data
 void execEvery(int ms) {
   static unsigned long msTick = millis();
   if (millis() - msTick >= ms) { // run every 250 ms
     msTick = millis();
 
-    //readEcuData();
-    readExtraSensors();
-    procDisplay();
+    readEcuData();
     
-    
+    // register top values
     if (rpm > rpmtop) {
       rpmtop = rpm;
     }
@@ -961,11 +1070,10 @@ void execEvery(int ms) {
       }
     }
   
-    // critical ect value and speed limit, alarm on
-    if (ect > ect_alarm) {
+    if (ect > ect_alarm) { // engine temp alarm
       digitalWrite(PIN_BUZZER, HIGH);
     }
-    else if (vss > 100 && vss < 105) {
+    else if (vss > 100 && vss < 105) { // car speed alarm/notification
       digitalWrite(PIN_BUZZER, HIGH);
     }
     else {
@@ -981,65 +1089,20 @@ void execEvery(int ms) {
       digitalWrite(PIN_AC, HIGH);
       cp = 1;
     }
-  }
-}
 
-void pushPinHi(byte pin, unsigned int delayms)
-{
-  digitalWrite(pin, HIGH);
-  delay(delayms);
-  digitalWrite(pin, LOW);
-}
+    // IMAP = RPM * MAP / IAT / 2
+    // MAF = (IMAP/60)*(VE/100)*(Eng Disp)*(MMA)/(R)
+    // Where: VE = 80% (Volumetric Efficiency), R = 8.314 J/°K/mole, MMA = 28.97 g/mole (Molecular mass of air)
+    int imap = rpm * maps / (iat + 273) / 2;
+    // ve = 75, ed = 1.595, afr = 14.7
+    maf = (imap / 60) * (80 / 100) * 1.595 * 28.9644 / 8.314472;
 
-void procButtons() {
-  static unsigned long buttonsTick = 0;
-  static bool button_press_old = HIGH;
+    // (gallons of fuel) = (grams of air) / (air/fuel ratio) / 6.17 / 454
+    //gof = maf / afr / 6.17 / 454;
+  
+    gear = vss / (rpm+1) * 150 + 0.3;
 
-  int button_press_new;
-
-  btn = analogRead(PIN_BUTTON); // temporary setup: vcc triggered / change to multiple button
-  button_press_new = (btn == 1023) ? LOW : HIGH;
-
-  if (button_press_new != button_press_old) { // change state
-    if (button_press_new == HIGH) { // on released
-      if (millis() - buttonsTick >= 5000) { // long press 5 secs
-        scanDtcError();
-        //resetECU();
-      }
-      else if (millis() - buttonsTick >= 3000) { // long press 3 secs
-        obd_select++;
-        if (obd_select > 2) {
-          obd_select = 1;
-        }
-        EEPROM.write(0, obd_select);
-      }
-      else if (millis() - buttonsTick >= 5) { // short press 5 ms
-        pag_select++;
-        if (pag_select > 5) {
-          pag_select = 0;
-        }
-        //EEPROM.write(1, pag_select);
-      }
-      buttonsTick = 0; // reset timer
-      isButtonPressed = false;
-    }
-    else { // on pressed
-      buttonsTick = millis(); // start timer
-      isButtonPressed = true;
-    }
-    button_press_old = button_press_new;
-  }
-
-  if (button_press_new == LOW) { // while pressed
-    if (millis() - buttonsTick == 5) { // beep @ 5 ms
-      pushPinHi(PIN_BUZZER, 50); // beep 50ms
-    }
-    else if (millis() - buttonsTick == 3000) { // beep @  3 secs
-      pushPinHi(PIN_BUZZER, 50); // beep 50ms
-    }
-    else if (millis() - buttonsTick == 5000) { // beep @  5 secs
-      pushPinHi(PIN_BUZZER, 50); // beep 50ms
-    }
+    procDisplay();
   }
 }
 
@@ -1048,17 +1111,17 @@ void setup()
   pinMode(PIN_AC, OUTPUT); // Air Condition
   pinMode(PIN_BUZZER, OUTPUT); // Piezo Buzzer
 
+  pinMode(PIN_BUTTON, INPUT_PULLUP); // Button
+
   pinMode(PIN_DOOR, INPUT); // Door
   pinMode(PIN_VOLT, INPUT); // Volt meter
   pinMode(PIN_FP, INPUT); // 100psi Fuel Pressure
   pinMode(PIN_AFR, INPUT); // AEM UEGO AFR
   pinMode(PIN_TH, INPUT); // 10k Thermistor
 
-  pinMode(PIN_BUTTON, INPUT); // Button
-
-  //Serial.begin(115200); // For debugging
-  btSerial.begin(9600);
-  //btSerial.begin(38400);
+  Serial.begin(115200); // For debugging
+  btSerial.begin(9600); // HC-05
+  //btSerial.begin(38400); // HC-06
   dlcSerial.begin(9600);
 
   // LCD I2C init
@@ -1097,30 +1160,13 @@ void setup()
 }
 
 void loop() {
-  static unsigned long btTick = 0;
-
   procButtons();
   
   if (!isButtonPressed) {
-    btSerial.listen();
-    if (btSerial.available()) {
-      if (!elm_mode) {
-        elm_mode = true;
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print(" Bluetooth Mode");
-        lcd.setCursor(0,1);
-        lcd.print(" ECU Type: OBD");
-        lcd.print(obd_select);
-      }
-      procbtSerial();
-      btTick = millis();
-    }
-    if (millis() - btTick >= 2000) { // bt timeout 2 secs
-      elm_mode = false;
-    }
-    if (!elm_mode) {
-      execEvery(250);
-    }
+    readExtraSensors();
+    //readEcuData();
+    procbtSerial();
+    
+    execEvery(250);
   }
 }
