@@ -60,7 +60,7 @@ void procbtSerial(void) {
       if (btdata1[i] == '\r') { // terminate at \r
         btdata1[i] = '\0';
   
-        byte len = strlen(btdata1);
+        //byte len = strlen(btdata1);
         if (!strcmp(btdata1, "ATD")) { // defaults
           elm_echo = false;
           elm_space = true;
@@ -78,27 +78,27 @@ void procbtSerial(void) {
           elm_header = false;
           sprintf_P(btdata2, PSTR("Honda OBD v1.0\r\n>"));
         }
-        else if (len == 4 && strstr(btdata1, "ATE")) { // echo on/off / general
+        else if (i == 4 && strstr(btdata1, "ATE")) { // echo on/off / general
           elm_echo = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (len == 4 && strstr(btdata1, "ATL")) { // linfeed on/off / general
+        else if (i == 4 && strstr(btdata1, "ATL")) { // linfeed on/off / general
           elm_linefeed = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (len == 4 && strstr(btdata1, "ATM")) { // memory on/off / general
+        else if (i == 4 && strstr(btdata1, "ATM")) { // memory on/off / general
           //elm_memory = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (len == 4 && strstr(btdata1, "ATS")) { // space on/off / obd
+        else if (i == 4 && strstr(btdata1, "ATS")) { // space on/off / obd
           elm_space = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (len == 4 && strstr(btdata1, "ATH")) { // headers on/off / obd
+        else if (i == 4 && strstr(btdata1, "ATH")) { // headers on/off / obd
           //elm_header = (btdata1[3] == '1' ? true : false);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (len == 5 && strstr(btdata1, "ATSP")) { // set protocol to ? and save it / obd
+        else if (i == 5 && strstr(btdata1, "ATSP")) { // set protocol to ? and save it / obd
           //elm_protocol = atoi(btdata1[4]);
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
@@ -118,14 +118,14 @@ void procbtSerial(void) {
         // https://en.wikipedia.org/wiki/OBD-II_PIDs
         // sprintf_P(cmd_str, PSTR("%02X%02X\r"), mode, pid);
         // sscanf(btdata1, "%02X%02X", mode, pid)
-        else if (len == 2 && btdata1[0] == '0' && btdata1[1] == '4') { // mode 04
+        else if (i == 2 && btdata1[0] == '0' && btdata1[1] == '4') { // mode 04
           // clear dtc / stored values
           // reset dtc/ecu honda
           // 21 04 01 DA / 01 03 FC
           //dlcCommand(0x21, 0x04, 0x01, 0x00, dlcdata); // reset ecu
           sprintf_P(btdata2, PSTR("OK\r\n>"));
         }
-        else if (len == 2 && btdata1[0] == '0' && btdata1[1] == '3') { // mode 03
+        else if (i == 2 && btdata1[0] == '0' && btdata1[1] == '3') { // mode 03
           // request dtc
           // do scan then report the errors
           // 43 01 33 00 00 00 00 = P0133
@@ -135,7 +135,7 @@ void procbtSerial(void) {
           sprintf_P(btdata2, PSTR("OK\r\n>"));
           Serial.println("HIT");
         }
-        else if (len <= 5 && btdata1[0] == '0' && btdata1[1] == '1') { // mode 01
+        else if (i <= 5 && btdata1[0] == '0' && btdata1[1] == '1') { // mode 01
           // multi pid 010C0B0D040E05
           if (strstr(&btdata1[2], "00")) {
             sprintf_P(btdata2, PSTR("41 00 BE 3E B0 11\r\n>"));
