@@ -174,8 +174,6 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len) {
   dlcSerial.write(len);  // num of bytes to read
   dlcSerial.write(crc);  // checksum
 
-  delay(1); // test
-
   int i = 0;
   while (i < (len+3) && millis() < timeOut) {
     if (dlcSerial.available()) {
@@ -477,8 +475,9 @@ void procbtSerial() {
           }
           else if (strstr(&btdata1[2], "45")) { // iacv / relative throttle position (%)
             if (dlcCommand(0x20, 0x05, 0x28, 0x01)) { // dlcdata[2]
-              byte b = dlcdata[2] / 2.55;
-              sprintf_P(btdata2, PSTR("41 45 %02X\r\n>"), b);
+              //byte b = dlcdata[2] / 2.55;
+              //b = b * 2.55; // conversion to byte range
+              sprintf_P(btdata2, PSTR("41 45 %02X\r\n>"), dlcdata[2]);
             }
           }
         }
@@ -670,27 +669,40 @@ void procDisplay(void) {
       // 00 00 00 00 00
       // 00 00 00 00 00
       lcd.setCursor(0,0);
+      for (i=0; i<dtcCount; i++) {
+        if (dtcErrors[i] < 10) { lcd.print("0"); }
+        lcd.print(dtcErrors[i]);
+        lcd.print(" ");
+
+        if (dtcCount == 5) {
+          lcd.print("+");
+          lcd.setCursor(0,1);
+        }
+        if (dtcCount == 10) {
+          lcd.print("+");
+          break;
+        }
+      }
+      
       if (dtcCount == 0) {
         lcd.print("    NO ERROR    ");
         lcd.setCursor(0,1);
         lcd.print("                ");
       }
       else {
-        for (i=0; i<dtcCount; i++) {
-          if (dtcErrors[i] < 10) { lcd.print("0"); }
-          lcd.print(dtcErrors[i]);
-          lcd.print(" ");
-  
-          if (dtcCount == 5) {
-            lcd.print("+");
+        for (i=dtcCount; i<14; i++) {
+          if (i == 5) {
+            lcd.print("-");
             lcd.setCursor(0,1);
           }
-          if (dtcCount == 10) {
-            lcd.print("+");
+          if (i == 10) {
+            lcd.print("-");
             break;
           }
+          lcd.print("   ");
         }
       }
+
     }
     else if (pag_select == 4) {
       // display 4 // extra sensor
@@ -795,6 +807,8 @@ void readEcuData() {
     //dlcdata[17] 
   }
 
+  delay(1);
+
   if (dlcCommand(0x20,0x05,0x10,0x10)) { // row2
     f = dlcdata[2];
     ect = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
@@ -819,6 +833,8 @@ void readEcuData() {
     //eld = 77.06 - dlcdata[11] / 2.5371; // (Amps) electrical load
   }
 
+  delay(1);
+
   if (dlcCommand(0x20,0x05,0x20,0x10)) { // row3
     sft = (dlcdata[2] / 128 - 1) * 100; // (%) -30 to 30
     lft = (dlcdata[3] / 128 - 1) * 100; // (%) -30 to 30
@@ -836,6 +852,8 @@ void readEcuData() {
     iacv = dlcdata[10] / 2.55;
   }
 
+  delay(1);
+
   if (dlcCommand(0x20,0x05,0x30,0x10)) { // row4
     // dlcdata[7] to dlcdata[12] unknown
     knoc = dlcdata[14] / 51; // 0 to 5
@@ -846,7 +864,7 @@ void readEcuData() {
 void scanDtcError() {
   byte i;
 
-  if (dlcCommand(0x20,0x05,0x40,0x10)) { // row 1
+  if (dlcCommand(0x20,0x05,0x40,0x10)) { // row 5
     for (i=0; i<14; i++) {
       if (dlcdata[i+2] >> 4) {
         dtcErrors[i] = i*2;
@@ -863,6 +881,7 @@ void scanDtcError() {
         dtcCount++;
       }
     }
+    pag_select = 3;
   }
 }
 
