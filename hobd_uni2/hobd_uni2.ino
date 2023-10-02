@@ -134,16 +134,7 @@ bool dlcWait = false;
 
 int dtcErrors[14], dtcCount = 0;
 
-
-void bt_write(char *str) {
-  char c = *str;
-  while (*str != '\0') {
-    if (!elm_linefeed && *str == 10) *str++; // skip linefeed for all reply
-    if (c == '4' && !elm_space && *str == 32) *str++; // skip space for obd reply
-    btSerial.write(*str++);
-  }
-}
-
+// --- begin ECU functions ---
 void dlcInit() {
   dlcSerial.write(0x68);
   dlcSerial.write(0x6a);
@@ -203,8 +194,130 @@ int dlcCommand(byte cmd, byte num, byte loc, byte len) {
   return 1; // success
 }
 
-long readVcc()
+// Read DTC Error
+void scanDtcError() {
+  byte i;
+
+  if (dlcCommand(0x20,0x05,0x40,0x10)) { // row 5
+    for (i=0; i<14; i++) {
+      if (dlcdata[i+2] >> 4) {
+        dtcErrors[i] = i*2;
+        dtcCount++;
+      }   
+      if (dlcdata[i+2] & 0xf) {
+        // haxx
+        //if (errnum == 23) errnum = 22;
+        //if (errnum == 24) errnum = 23;
+        dtcErrors[i] = (i*2)+1;
+        // haxx
+        if (dtcErrors[i] == 23) dtcErrors[i] = 22;
+        if (dtcErrors[i] == 24) dtcErrors[i] = 23;
+        dtcCount++;
+      }
+    }
+    pag_select = 3;
+  }
+}
+
+// Reset ECU
+void resetEcu() {
+  // 21 04 01 DA / 01 03 FC
+  dlcCommand(0x21, 0x04, 0x01, 0x00); // reset ecu
+}
+
+// Read ECU Data
+void readEcuData() {
+  float f;
+
+  //char h_initobd2[12] = {0x68,0x6a,0xf5,0xaf,0xbf,0xb3,0xb2,0xc1,0xdb,0xb3,0xe9}; // 200ms - 300ms delay
+  //byte h_cmd1[6] = {0x20,0x05,0x00,0x10,0xcb}; // row 1
+  //byte h_cmd2[6] = {0x20,0x05,0x10,0x10,0xbb}; // row 2
+  //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
+  //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
+
+  if (dlcCommand(0x20,0x05,0x00,0x10)) { // row 1
+    if (obd_select == 1) rpm = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
+    if (obd_select == 2) rpm = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
+    // in odb1 rpm is -1
+    if (rpm < 0) { rpm = 0; }
+
+    vss = dlcdata[4];
+
+    // discrete sensors
+    //dlcdata[10]
+    sw_aircon = bitRead(dlcdata[10], 2);
+    //dlcdata[11]
+    //dlcdata[12]
+    sw_vtec = bitRead(dlcdata[12], 3);
+    //dlcdata[13]
+    //dlcdata[14]
+    //dlcdata[15]
+    //dlcdata[17] 
+  }
+
+  delay(1);
+
+  if (dlcCommand(0x20,0x05,0x10,0x10)) { // row2
+    f = dlcdata[2];
+    ect = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
+    f = dlcdata[3];
+    iat = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
+    maps = dlcdata[4] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
+    baro = dlcdata[5] * 0.716 - 5; // kPa
+    tps = (dlcdata[6] - 24) / 2;
+
+    f = dlcdata[7];
+    o2 = f / 51.3; // (V) o2
+
+    /*
+    // 0v to 1v / stock sensor
+    // 0v to 5v / AEM UEGO / linear
+    afr = (f * 2) + 10; // afr for AEM UEGO
+    */
+
+    f = dlcdata[9];
+    volt = f / 10.45; // (V) battery
+    //alt_fr = dlcdata[10] / 2.55 // (%) alternator load
+    //eld = 77.06 - dlcdata[11] / 2.5371; // (Amps) electrical load
+  }
+
+  delay(1);
+
+  if (dlcCommand(0x20,0x05,0x20,0x10)) { // row3
+    sft = (dlcdata[2] / 128 - 1) * 100; // (%) -30 to 30
+    lft = (dlcdata[3] / 128 - 1) * 100; // (%) -30 to 30
+
+    inj = (dlcdata[6] * 256 + dlcdata[7]) / 250; // (ms) 0 to 16
+
+    //ign = (dlcdata[8] - 128) / 2;
+    f = dlcdata[8];
+    ign = (f - 24) / 4; // (degrees)
+
+    //lmt = (dlcdata[9] - 128) / 2;
+    f = dlcdata[9];
+    lmt = (f - 24) / 4;
+
+    iacv = dlcdata[10] / 2.55;
+  }
+
+  delay(1);
+
+  if (dlcCommand(0x20,0x05,0x30,0x10)) { // row4
+    // dlcdata[7] to dlcdata[12] unknown
+    knoc = dlcdata[14] / 51; // 0 to 5
+  }
+}
+// --- end ECU functions ---
+
+void pushPinHi(byte pin, unsigned int delayms)
 {
+  digitalWrite(pin, HIGH);
+  delay(delayms);
+  digitalWrite(pin, LOW);
+}
+
+// --- begin extra sensors ---
+long readVcc() {
   // Read 1.1V reference against AVcc
   // set the reference to Vcc and the measurement to the internal 1.1V reference
   #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
@@ -229,7 +342,107 @@ long readVcc()
   return vcc;
 }
 
-// bluetooth routines
+float readVoltage() {
+  float f;
+
+  // read voltage sensor (volt2)
+  f = readVcc() / 1000; // V read from ref. or 5.0
+  f = (analogRead(PIN_VOLT) * f) / 1024.0; // V
+  f = f / (R2/(R1+R2)); // voltage divider
+
+  return f;
+}
+
+float readAirFuelRatio() {
+  // air fuel ratio, x=afr(10-20), y=volts(0-5)
+  // y = mx + b // slope intercept
+  // x = (y - b) / m // derived for x
+  // m = y2 - y1 / x2 - x1 = 0.5
+  // y = 0.5x + 0 @ x = 10, b = -5
+
+  // where:
+  // y = volts
+  // m = slope
+  // b = y intercept
+  // x = afr
+
+  // x = (y + 5) / 0.5
+
+  // read afr sensor (afr)
+  float f = readVcc() / 1000; // V read from ref. or 5.0
+  f = (analogRead(PIN_AFR) * f) / 1024.0; // V
+  f = (f + 5) / 0.5; // afr
+  //f = 2 * f + 10;
+
+  return f;
+}
+
+float readThermistor() {
+  // read thermal sensor (th)
+  int b = 3950;
+  float f = analogRead(PIN_TH);
+  
+  f = R3 * (1023.0 / f - 1.0);
+  f = log(f);
+  f = 1.0 / (0.001129148 + (0.000234125 * f) + (0.0000000876741 * f * f * f)); // K
+  f = f - 273.15; // convert to C
+  // ideal temperature correctors
+  if (f < 0) f = 0;
+  if (f > 99) f = 99;
+  
+  /*
+  f = 1023.0 / f  - 1.0;
+  f = R3 / f;                 // resistance
+  // th steinhart;
+  f = f / 10000.0;            // (R/Ro)
+  f = log(f);                 // ln(R/Ro)
+  f /= b;                     // 1/B * ln(R/Ro)
+  f += 1.0 / (25 + 273.15);   // + (1/To)
+  f = 1.0 / f;                // Invert
+  f -= 273.15;                // convert to C
+  */
+
+  return f;
+}
+
+float readFuelPressure() {
+  // fuel pressure, x=psi(0-100), y=volts(0.5-4.5)
+  // y = mx + b
+  // x = (y - b) / m // derived for x
+  // m = y2 - y1 / x2 - x1 = 0.04
+  // y = 0.04x + 0.5 @ x = 0, b = -5
+
+  // where:
+  // y = volts
+  // m = slope
+  // b = y intercept
+  // x = psi
+
+  // x = (y - 0.5) / 0.04
+
+  // fuel pressur sensor (fp)
+  float f = readVcc() / 1000; // V read from ref. or 5.0
+  f = (analogRead(PIN_FP) * f) / 1024.0; // V
+  f = (f - 0.5) / 0.04; // psi
+  f = f * 6.89476; // kPa
+  // ideal temperature correctors
+  if (f < 0) f = 0;
+  if (f > 689) f = 689;
+
+  return f;
+}
+// --- end extra sensors ---
+
+// --- begin bluetooth serial functions ---
+void bt_write(char *str) {
+  char c = *str;
+  while (*str != '\0') {
+    if (!elm_linefeed && *str == 10) *str++; // skip linefeed for all reply
+    if (c == '4' && !elm_space && *str == 32) *str++; // skip space for obd reply
+    btSerial.write(*str++);
+  }
+}
+
 void procbtSerial() {
     char btdata1[20]={0};  // bt data in buffer
     char btdata2[20]={0};  // bt data out buffer
@@ -292,6 +505,7 @@ void procbtSerial() {
         }
         else if (!strcmp(btdata1, "ATRV")) { // read voltage in float / volts
           //btSerial.print("12.0V\r\n>");
+          volt2 = readVoltage();
           sprintf_P(btdata2, PSTR("%.1fV\r\n>"), volt2);
         }
         // kerpz custom AT cmd
@@ -392,8 +606,8 @@ void procbtSerial() {
               sprintf_P(btdata2, PSTR("41 07 %02X\r\n>"), dlcdata[2]);
             }
           }
-          else if (strstr(&btdata1[2], "0A")) { // fuel pressure
-          //  btSerial.print("41 0A EF\r\n");
+          else if (strstr(&btdata1[2], "0A")) { // fuel pressure // external sensor
+            fp = readFuelPressure();
             byte b = fp / 3;
             sprintf_P(btdata2, PSTR("41 0A %02X\r\n>"), b);
           }
@@ -463,7 +677,7 @@ void procbtSerial() {
             }
           }
           else if (strstr(&btdata1[2], "40")) {
-            sprintf_P(btdata2, PSTR("41 40 48 00 00 00\r\n>")); // pid 42 and 45
+            sprintf_P(btdata2, PSTR("41 40 4C 00 00 00\r\n>")); // pid 42, 45 and 46
           }
           else if (strstr(&btdata1[2], "42")) { // ecu voltage (V)
             if (dlcCommand(0x20, 0x05, 0x17, 0x01)) {
@@ -479,6 +693,11 @@ void procbtSerial() {
               //b = b * 2.55; // conversion to byte range
               sprintf_P(btdata2, PSTR("41 45 %02X\r\n>"), dlcdata[2]);
             }
+          }
+          else if (strstr(&btdata1[2], "46")) { // ambient temperature // external sensor
+            th = readThermistor();
+            byte v = th + 40; // conversion
+            sprintf_P(btdata2, PSTR("41 46 %02X\r\n>"), v);
           }
         }
         
@@ -529,7 +748,19 @@ void procbtSerial() {
         ++i;
       }
     }
-}  
+}
+// --- end bluetooth serial functions ---
+
+/* Useful Constants */
+#define SECS_PER_MIN  (60UL)
+#define SECS_PER_HOUR (3600UL)
+#define SECS_PER_DAY  (SECS_PER_HOUR * 24L)
+
+/* Useful Macros for getting elapsed time */
+#define numberOfSeconds(_time_) (_time_ % SECS_PER_MIN)  
+#define numberOfMinutes(_time_) ((_time_ / SECS_PER_MIN) % SECS_PER_MIN) 
+#define numberOfHours(_time_) (( _time_% SECS_PER_DAY) / SECS_PER_HOUR)
+#define elapsedDays(_time_) ( _time_ / SECS_PER_DAY)  
 
 void lcdZeroPaddedPrint(float f, byte len, bool decimal = false) {
   long i;
@@ -562,17 +793,6 @@ void lcdZeroPaddedPrint(float f, byte len, bool decimal = false) {
   }
 }
 
-/* Useful Constants */
-#define SECS_PER_MIN  (60UL)
-#define SECS_PER_HOUR (3600UL)
-#define SECS_PER_DAY  (SECS_PER_HOUR * 24L)
-
-/* Useful Macros for getting elapsed time */
-#define numberOfSeconds(_time_) (_time_ % SECS_PER_MIN)  
-#define numberOfMinutes(_time_) ((_time_ / SECS_PER_MIN) % SECS_PER_MIN) 
-#define numberOfHours(_time_) (( _time_% SECS_PER_DAY) / SECS_PER_HOUR)
-#define elapsedDays(_time_) ( _time_ / SECS_PER_DAY)  
-
 void lcdSecondsToTimePrint(unsigned long i) {
   lcdZeroPaddedPrint(numberOfHours(i), 2);
   lcd.print(":");
@@ -581,7 +801,7 @@ void lcdSecondsToTimePrint(unsigned long i) {
   lcdZeroPaddedPrint(numberOfSeconds(i), 2);
 }
 
-// display routines (2x16 LCD)
+// --- being display routines (2x16 LCD) ---
 void procDisplay(void) {
     //lcd.clear();
     if (pag_select == 0) {
@@ -776,204 +996,7 @@ void procDisplay(void) {
     }
     */
 }  
-
-// Read ECU Data
-void readEcuData() {
-  float f;
-
-  //char h_initobd2[12] = {0x68,0x6a,0xf5,0xaf,0xbf,0xb3,0xb2,0xc1,0xdb,0xb3,0xe9}; // 200ms - 300ms delay
-  //byte h_cmd1[6] = {0x20,0x05,0x00,0x10,0xcb}; // row 1
-  //byte h_cmd2[6] = {0x20,0x05,0x10,0x10,0xbb}; // row 2
-  //byte h_cmd3[6] = {0x20,0x05,0x20,0x10,0xab}; // row 3
-  //byte h_cmd4[6] = {0x20,0x05,0x76,0x0a,0x5b}; // ecu id
-
-  if (dlcCommand(0x20,0x05,0x00,0x10)) { // row 1
-    if (obd_select == 1) rpm = 1875000 / (dlcdata[2] * 256 + dlcdata[3] + 1); // OBD1
-    if (obd_select == 2) rpm = (dlcdata[2] * 256 + dlcdata[3]) / 4; // OBD2
-    // in odb1 rpm is -1
-    if (rpm < 0) { rpm = 0; }
-
-    vss = dlcdata[4];
-
-    // discrete sensors
-    //dlcdata[10]
-    sw_aircon = bitRead(dlcdata[10], 2);
-    //dlcdata[11]
-    //dlcdata[12]
-    sw_vtec = bitRead(dlcdata[12], 3);
-    //dlcdata[13]
-    //dlcdata[14]
-    //dlcdata[15]
-    //dlcdata[17] 
-  }
-
-  delay(1);
-
-  if (dlcCommand(0x20,0x05,0x10,0x10)) { // row2
-    f = dlcdata[2];
-    ect = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
-    f = dlcdata[3];
-    iat = 155.04149 - f * 3.0414878 + pow(f, 2) * 0.03952185 - pow(f, 3) * 0.00029383913 + pow(f, 4) * 0.0000010792568 - pow(f, 5) * 0.0000000015618437;
-    maps = dlcdata[4] * 0.716 - 5; // 101 kPa @ off|wot // 10kPa - 30kPa @ idle
-    baro = dlcdata[5] * 0.716 - 5; // kPa
-    tps = (dlcdata[6] - 24) / 2;
-
-    f = dlcdata[7];
-    o2 = f / 51.3; // (V) o2
-
-    /*
-    // 0v to 1v / stock sensor
-    // 0v to 5v / AEM UEGO / linear
-    afr = (f * 2) + 10; // afr for AEM UEGO
-    */
-
-    f = dlcdata[9];
-    volt = f / 10.45; // (V) battery
-    //alt_fr = dlcdata[10] / 2.55 // (%) alternator load
-    //eld = 77.06 - dlcdata[11] / 2.5371; // (Amps) electrical load
-  }
-
-  delay(1);
-
-  if (dlcCommand(0x20,0x05,0x20,0x10)) { // row3
-    sft = (dlcdata[2] / 128 - 1) * 100; // (%) -30 to 30
-    lft = (dlcdata[3] / 128 - 1) * 100; // (%) -30 to 30
-
-    inj = (dlcdata[6] * 256 + dlcdata[7]) / 250; // (ms) 0 to 16
-
-    //ign = (dlcdata[8] - 128) / 2;
-    f = dlcdata[8];
-    ign = (f - 24) / 4; // (degrees)
-
-    //lmt = (dlcdata[9] - 128) / 2;
-    f = dlcdata[9];
-    lmt = (f - 24) / 4;
-
-    iacv = dlcdata[10] / 2.55;
-  }
-
-  delay(1);
-
-  if (dlcCommand(0x20,0x05,0x30,0x10)) { // row4
-    // dlcdata[7] to dlcdata[12] unknown
-    knoc = dlcdata[14] / 51; // 0 to 5
-  }
-}
-
-// Read DTC Error
-void scanDtcError() {
-  byte i;
-
-  if (dlcCommand(0x20,0x05,0x40,0x10)) { // row 5
-    for (i=0; i<14; i++) {
-      if (dlcdata[i+2] >> 4) {
-        dtcErrors[i] = i*2;
-        dtcCount++;
-      }   
-      if (dlcdata[i+2] & 0xf) {
-        // haxx
-        //if (errnum == 23) errnum = 22;
-        //if (errnum == 24) errnum = 23;
-        dtcErrors[i] = (i*2)+1;
-        // haxx
-        if (dtcErrors[i] == 23) dtcErrors[i] = 22;
-        if (dtcErrors[i] == 24) dtcErrors[i] = 23;
-        dtcCount++;
-      }
-    }
-    pag_select = 3;
-  }
-}
-
-// Reset ECU
-void resetEcu() {
-  // 21 04 01 DA / 01 03 FC
-  dlcCommand(0x21, 0x04, 0x01, 0x00); // reset ecu
-}
-
-// Read Extra Sensors
-void readExtraSensors() {
-    float f;
-
-    // read voltage sensor (volt2)
-    f = readVcc() / 1000; // V read from ref. or 5.0
-    f = (analogRead(PIN_VOLT) * f) / 1024.0; // V
-    volt2 = f / (R2/(R1+R2)); // voltage divider
-
-    // air fuel ratio, x=afr(10-20), y=volts(0-5)
-    // y = mx + b // slope intercept
-    // x = (y - b) / m // derived for x
-    // m = y2 - y1 / x2 - x1 = 0.5
-    // y = 0.5x + 0 @ x = 10, b = -5
-
-    // where:
-    // y = volts
-    // m = slope
-    // b = y intercept
-    // x = afr
-
-    // x = (y + 5) / 0.5
-
-    // read afr sensor (afr)
-    f = readVcc() / 1000; // V read from ref. or 5.0
-    f = (analogRead(PIN_AFR) * f) / 1024.0; // V
-    afr = (f + 5) / 0.5; // afr
-    //f = 2 * f + 10;
-
-    // fuel pressure, x=psi(0-100), y=volts(0.5-4.5)
-    // y = mx + b
-    // x = (y - b) / m // derived for x
-    // m = y2 - y1 / x2 - x1 = 0.04
-    // y = 0.04x + 0.5 @ x = 0, b = -5
-
-    // where:
-    // y = volts
-    // m = slope
-    // b = y intercept
-    // x = psi
-
-    // x = (y - 0.5) / 0.04
-
-    // fuel pressur sensor (fp)
-    f = readVcc() / 1000; // V read from ref. or 5.0
-    f = (analogRead(PIN_FP) * f) / 1024.0; // V
-    f = (f - 0.5) / 0.04; // psi
-    fp = f * 6.89476; // kPa
-    // ideal temperature correctors
-    if (fp < 0) fp = 0;
-    if (fp > 689) fp = 689;
-
-    // read thermal sensor (th)
-    int b = 3950;
-    f = analogRead(PIN_TH);
-    
-    f = R3 * (1023.0 / f - 1.0);
-    f = log(f);
-    f = 1.0 / (0.001129148 + (0.000234125 * f) + (0.0000000876741 * f * f * f)); // K
-    th = f - 273.15; // convert to C
-    // ideal temperature correctors
-    if (th < 0) th = 0;
-    if (th > 99) th = 99;
-    
-    /*
-    f = 1023.0 / f  - 1.0;
-    f = R3 / f;                 // resistance
-    // th steinhart;
-    f = f / 10000.0;            // (R/Ro)
-    f = log(f);                 // ln(R/Ro)
-    f /= b;                     // 1/B * ln(R/Ro)
-    f += 1.0 / (25 + 273.15);   // + (1/To)
-    f = 1.0 / f;                // Invert
-    f -= 273.15;                // convert to C
-    */
-}
-
-void pushPinHi(byte pin, unsigned int delayms)
-{
-  digitalWrite(pin, HIGH);
-  delay(delayms);
-  digitalWrite(pin, LOW);
-}
+// --- end display routines (2x16 LCD) ---
 
 void procButtons() {
   static unsigned long buttonsTick = 0;
@@ -1031,6 +1054,11 @@ void execEvery(int ms) {
     msTick = millis();
 
     readEcuData();
+
+    volt2 = readVoltage();
+    fp = readFuelPressure();
+    afr = readAirFuelRatio();
+    th = readThermistor();
     
     // register top values
     if (rpm > rpmtop) {
@@ -1127,7 +1155,7 @@ void setup()
   pinMode(PIN_AFR, INPUT); // AEM UEGO AFR
   pinMode(PIN_TH, INPUT); // 10k Thermistor
 
-  Serial.begin(115200); // For debugging
+  Serial.begin(115200); // USB-Serial
   btSerial.begin(9600); // HC-05
   //btSerial.begin(38400); // HC-06
   dlcSerial.begin(9600);
@@ -1192,7 +1220,6 @@ void loop() {
   }
 
   if (!elm_mode) {
-    readExtraSensors();
     execEvery(250);
   }
 }
