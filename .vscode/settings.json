@@ -1,0 +1,9 @@
+{
+  "arduino.useArduinoCli": true,
+  "arduino.logLevel": "info",
+  "arduino.allowPDEFiletype": false,
+  "arduino.enableUSBDetection": true,
+  "arduino.disableTestingOpen": false,
+  "arduino.skipHeaderProvider": false,
+  "arduino.additionalUrls": [],
+}

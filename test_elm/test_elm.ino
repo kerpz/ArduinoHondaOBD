@@ -54,7 +54,7 @@ void procbtSerial(void) {
     int i = 0;
     while (btSerial.available()) {
       btdata1[i] = toupper(btSerial.read());
-      
+      //Serial.print(btdata1[i]);      
       delay(1); // this is required
       
       if (btdata1[i] == '\r') { // terminate at \r
@@ -133,7 +133,6 @@ void procbtSerial(void) {
           //sprintf_P(btdata2, PSTR("UNABLE TO CONNECT\r\n>"));
           sprintf_P(btdata2, PSTR("43 01 33 00 00 00 00\r\n>"));
           sprintf_P(btdata2, PSTR("OK\r\n>"));
-          Serial.println("HIT");
         }
         else if (i <= 5 && btdata1[0] == '0' && btdata1[1] == '1') { // mode 01
           // multi pid 010C0B0D040E05

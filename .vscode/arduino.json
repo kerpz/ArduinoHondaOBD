@@ -1,0 +1,7 @@
+{
+    "configuration": "cpu=atmega328old",
+    "board": "arduino:avr:nano",
+    "sketch": "hobd_uni2\\hobd_uni2.ino",
+    "output": "./build",
+    "port": "COM4"
+}
